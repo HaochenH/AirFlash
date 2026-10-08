@@ -9,6 +9,11 @@ use std::{
     io::{self, BufRead, Write},
     thread::{self, JoinHandle},
 };
+
+#[cfg(windows)]
+const LIVE_LOOPBACK_SUPPORTED: bool = true;
+#[cfg(not(windows))]
+const LIVE_LOOPBACK_SUPPORTED: bool = false;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -112,7 +117,7 @@ fn main() {
             "hello" => send(
                 &request.id,
                 &request.session_id,
-                json!({"event":"hello","engine_version":env!("CARGO_PKG_VERSION"),"mode":"native","qualification":"partial","live_loopback":true,"commands":["hello","start","probe","stop","set_gain","set_equalizer","set_device_volume","pair","pair_pin"],"production_ready":false}),
+                json!({"event":"hello","engine_version":env!("CARGO_PKG_VERSION"),"mode":"native","qualification":"partial","live_loopback":LIVE_LOOPBACK_SUPPORTED,"commands":["hello","start","probe","stop","set_gain","set_equalizer","set_device_volume","pair","pair_pin"],"production_ready":false}),
             ),
             "probe" | "start" => {
                 let options: ProbeOptions = match serde_json::from_value(request.params) {

@@ -151,6 +151,16 @@ fn get_port(value: &Value, key: &str) -> Result<u16> {
     Ok(p as u16)
 }
 
+#[cfg(windows)]
+fn qpc_ns() -> u64 {
+    crate::wasapi::qpc_ns()
+}
+
+#[cfg(not(windows))]
+fn qpc_ns() -> u64 {
+    0
+}
+
 struct NtpServer {
     port: u16,
     cancel: Cancellation,
@@ -590,7 +600,7 @@ pub fn probe_with_controls(
     let mut last_marker = 0u64;
     let mut next_sync = start;
     emit(
-        json!({"event":"streaming","members":members.len(),"clock_id":clock_id,"first_send_unix_ns":clock.now_ns(),"first_send_qpc_ns":crate::wasapi::qpc_ns(),"requested_latency_ms":options.latency_ms,"sample_rate":rate,"measured_latency_ms":null,"qualified":false}),
+        json!({"event":"streaming","members":members.len(),"clock_id":clock_id,"first_send_unix_ns":clock.now_ns(),"first_send_qpc_ns":qpc_ns(),"requested_latency_ms":options.latency_ms,"sample_rate":rate,"measured_latency_ms":null,"qualified":false}),
     );
     let mut pcm = vec![0; PCM_BYTES];
     let outcome = (|| -> Result<()> {
@@ -635,7 +645,7 @@ pub fn probe_with_controls(
                 if let Some(qpc) = marker {
                     if qpc.saturating_sub(last_marker) > 200_000_000 {
                         emit(
-                            json!({"event":"audio_onset","capture_qpc_ns":qpc,"send_qpc_ns":crate::wasapi::qpc_ns()}),
+                            json!({"event":"audio_onset","capture_qpc_ns":qpc,"send_qpc_ns":qpc_ns()}),
                         );
                     }
                     last_marker = qpc;
