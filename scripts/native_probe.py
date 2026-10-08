@@ -24,16 +24,25 @@ MAX_GAIN = 0.1
 
 
 def engine_path() -> Path:
+    """Locate the native engine binary for the current platform.
+
+    Windows keeps the historical .exe name; Linux CI builds the same binary
+    without the suffix. Either way the JSONL protocol on stdin/stdout is the same.
+    """
+    suffix = ".exe" if os.name == "nt" else ""
     path = (
         Path(__file__).resolve().parents[1]
         / "native"
         / "airflash-engine"
         / "target"
         / "release"
-        / "airflash-engine.exe"
+        / f"airflash-engine{suffix}"
     )
     if not path.is_file():
-        raise FileNotFoundError(f"Native engine missing: {path}; run scripts/build-native.ps1")
+        raise FileNotFoundError(
+            f"Native engine missing: {path}; run scripts/build-native.ps1 on Windows "
+            "or cargo build --release --manifest-path native/airflash-engine/Cargo.toml on Linux"
+        )
     return path
 
 

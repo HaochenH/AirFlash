@@ -1,7 +1,6 @@
 # Native AirPlay engine
 
-Windows-only Rust sidecar; JSONL v1 on stdin/stdout. Diagnostics must not contain keys or PINs.
-Python UI commands use `start` (live WASAPI); finite tests use `probe` (<=5000ms, gain<=0.1,
+Windows-only Rust sidecar; JSONL v1 on stdin/stdout. Diagnostics must not contain keys or PINs. Python UI commands use `start` (live WASAPI); finite tests use `probe` (<=5000ms, gain<=0.1,
 440Hz WAV peak<=0.05). EOF cancels all owned work. `stop` and gain changes apply only to the
 matching session. `pair` emits `pin_required`; `pair_pin` completes pairing, validates the
 accessory signature and writes version-1, user-bound DPAPI credentials. Old pyatv credentials
@@ -23,7 +22,7 @@ RTSP fragmentation/bounds/cancellation, sequence wrap and independent ALAC decod
 
 Protocol references (wire fields/behavior, not linked protocol implementations):
 - HAP and AirPlay observations in postlund/pyatv (MIT).
-- AirPlay PTP profile documented by owntone/libairptp (MIT).
+- AirPlay PTP profile documented by owntime/libairptp (MIT).
 - Apple ALAC codec format via alac-encoder (MIT OR Apache-2.0).
 - IEEE 1588 message layouts and RTP sequence/time semantics.
 
@@ -35,3 +34,51 @@ Limitations: first-device scope is a single native HomePod stereo pair, Windows 
 ALAC and persistent pairing have independent/simulated tests; hardware qualification covers
 PCM transient authentication. No cross-model 200ms guarantee. The PTP implementation is
 an AirPlay unicast master, not a general-purpose IEEE 1588 daemon or full BMCA implementation.
+
+## Headless CLI (`airflash-cli`, Linux)
+
+The crate contains a second, feature-gated binary for non-interactive, headless use:
+
+```bash
+cargo build --release --features cli --manifest-path Cargo.toml
+```
+
+- `discover` browses `_airplay._tcp.local` / `_raop._tcp.local` over mDNS. `discovery.rs`
+  is a self-contained PTR/SRV/A/TXT parser (with compression pointers) plus a small UDP
+  transport; no third-party DNS-SD stack is used.
+- `start` runs a session in the foreground (one JSON event per line) or detached with
+  `--daemon`. Background runs need no tty, no desktop and no service manager: state,
+  log and the control socket live under `AIRFLASH_RUNTIME_DIR` (default
+  `$XDG_RUNTIME_DIR/airflash`, else `~/.local/state/airflash`).
+- `stop`, `status`, `logs`, `volume` and `gain` talk to the running daemon through a Unix
+  socket. `stop` sends SIGTERM, which the daemon turns into a graceful RTSP teardown.
+- `pair` performs HAP pairing and stores version-1 credentials for the current user
+  (`credentials_unix.rs`, mode 0600, hashed file names).
+
+The daemon reuses `session::probe_with_controls`; it contains no protocol code of its own.
+
+### Audio sources
+
+`--source` selects the capture backend:
+
+| Value | Backend | Platform |
+| --- | --- | --- |
+| `loopback` | system audio capture | Windows (WASAPI). On Linux it fails explicitly: PipeWire/PulseAudio capture is not implemented yet. |
+| `file` | loops a WAV file, resampled to the streaming rate | all (`source.rs`) |
+| `simulated` | deterministic test signal, reproducible output | all (`source.rs`) |
+
+`source.rs` mirrors the Windows loopback queue contract (bounded queue, underrun silence,
+scheduler recovery, equalizer before master gain, capture metrics), so file and simulated
+captures feed the same transport path and report the same metrics as a real capture.
+
+### Tests
+
+```bash
+cargo test --features cli          # adds the headless CLI lifecycle suite
+cargo clippy --all-targets --features cli -- -D warnings
+```
+
+`tests/headless_cli.rs` drives the CLI against a simulated AirPlay receiver (SRP, HAP,
+SETUP/RECORD/TEARDOWN, UDP media) and covers daemon start, streaming, control commands,
+graceful stop, failure without orphans, SIGTERM, config files and argument validation. It
+never contacts a real speaker.

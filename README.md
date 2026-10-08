@@ -26,6 +26,28 @@ a SmartScreen warning because release binaries are not code-signed. Use
 **More info** and **Run anyway** only when the downloaded files are from a
 source you trust.
 
+## Linux (headless preview)
+
+Linux is supported through a headless command line binary that reuses the same
+native AirPlay 2 sender: `airflash-cli`. There is no graphical UI, and desktop
+audio capture is **not implemented yet** (PipeWire/PulseAudio); the CLI can
+stream a file or a deterministic test signal, which is how the automated tests
+exercise the transport.
+
+```bash
+airflash-cli discover
+airflash-cli pair --host 192.168.1.42
+airflash-cli start --host 192.168.1.42 --source simulated --daemon
+airflash-cli status
+airflash-cli logs
+airflash-cli stop
+```
+
+A repeatable build produces an x86_64 AppImage, and a `systemd --user` unit
+runs the sender in the background without root. See
+[docs/LINUX.md](docs/LINUX.md) for dependencies, the systemd units, the
+AppImage layout, the audio boundaries, and the known limitations.
+
 ## Key features
 
 - Streams Windows system audio to HomePod over AirPlay 2.

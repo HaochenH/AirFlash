@@ -23,6 +23,25 @@ AirFlash 提供 Windows x64 可执行文件和可独立运行的 MSI 安装包�
 可能显示 SmartScreen 警告。只有在确认下载文件来源可信时，才使用“更多信息”
 和“仍要运行”。
 
+## Linux（无界面预览）
+
+Linux 通过无图形界面的命令行程序 `airflash-cli` 提供支持，复用的是同一个原生
+AirPlay 2 发送端。该预览**尚未实现桌面音频采集**（PipeWire/PulseAudio）；可以播放
+指定文件或确定性测试信号，自动化测试也基于这两种输入验证传输链路。
+
+```bash
+airflash-cli discover
+airflash-cli pair --host 192.168.1.42
+airflash-cli start --host 192.168.1.42 --source simulated --daemon
+airflash-cli status
+airflash-cli logs
+airflash-cli stop
+```
+
+可重复执行的构建会产出 x86_64 AppImage，`systemd --user` 单元可在普通用户下后台
+运行，无需 root。依赖、构建步骤、systemd 配置、AppImage 结构、音频边界和已知限制
+见 [LINUX.md](LINUX.md)。
+
 ## 主要功能
 
 - 通过 AirPlay 2 将 Windows 系统声音发送到 HomePod。
