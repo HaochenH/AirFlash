@@ -1,0 +1,125 @@
+name: Linux
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  # Latest commit wins; the Windows CI workflow is unaffected by this group.
+  group: airflash-linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Rust tests (engine, discovery, CLI lifecycle, simulated audio)
+        run: |
+          cargo test --locked --features cli --manifest-path native/airflash-engine/Cargo.toml
+      - name: Rust lint
+        run: |
+          cargo clippy --locked --all-targets --features cli --manifest-path native/airflash-engine/Cargo.toml -- -D warnings
+      - name: Release build of the headless binaries
+        run: |
+          cargo build --release --locked --features cli --manifest-path native/airflash-engine/Cargo.toml
+          test -x native/airflash-engine/target/release/airflash-cli
+          test -x native/airflash-engine/target/release/airflash-engine
+      - name: CLI starts and validates its arguments without a tty
+        run: |
+          CLI=native/airflash-engine/target/release/airflash-cli
+          "$CLI" version
+          "$CLI" help >/dev/null
+          # No daemon, no session bus, no DISPLAY: status and stop must be safe.
+          RUNTIME=$(mktemp -d)
+          AIRFLASH_RUNTIME_DIR="$RUNTIME" "$CLI" status --json
+          AIRFLASH_RUNTIME_DIR="$RUNTIME" "$CLI" stop
+          # Discovery over mDNS, reported as JSON for scripting.
+          AIRFLASH_RUNTIME_DIR="$RUNTIME" "$CLI" discover --timeout-ms 1500 --json
+          # Unknown options and invalid sessions are usage errors, not crashes.
+          if "$CLI" status --bogus 2>/dev/null; then echo "unknown option was accepted"; exit 1; fi
+          if "$CLI" start --host 127.0.0.1 --rate 96000 2>/dev/null; then echo "invalid rate accepted"; exit 1; fi
+          if "$CLI" volume --percent 30 2>/dev/null; then echo "incomplete volume command accepted"; exit 1; fi
+          rm -rf "$RUNTIME"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.22'
+          python-version: '3.12'
+      - name: Python checks
+        run: |
+          uv sync --locked
+          uv run pytest
+          uv run ruff check .
+      - name: systemd user unit files
+        run: |
+          # Unit files must parse; the CLI binary is not installed on the runner,
+          # so systemd-analyze reports a missing ExecStart path, which is fine.
+          systemd-analyze --user verify packaging/linux/systemd/user/airflash-cli.service || true
+          systemd-analyze --user verify packaging/linux/systemd/user/airflash-cli@.service || true
+          for unit in packaging/linux/systemd/user/*.service; do
+            grep -q '^\[Service\]' "$unit"
+            grep -q 'start --foreground' "$unit"
+            ! grep -q '^User=' "$unit"
+          done
+      - name: AppImage build (x86_64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools file
+          packaging/linux/appimage/build-appimage.sh
+      - name: AppDir structure, AppRun permissions and naming
+        run: |
+          APPDIR=build/appimage/AirFlash.AppDir
+          test -f "$APPDIR/AppRun"
+          test -x "$APPDIR/AppRun"
+          test -x "$APPDIR/usr/bin/airflash-cli"
+          test -f "$APPDIR/usr/share/applications/airflash-cli.desktop"
+          test -s "$APPDIR/usr/share/icons/hicolor/512x512/apps/airflash-cli.png"
+          test -s "$APPDIR/.DirIcon"
+          test -s "$APPDIR/VERSION"
+          test -f "$APPDIR/usr/share/licenses/airflash-cli/LICENSE-GPLv3"
+          test -f "$APPDIR/usr/share/doc/airflash-cli/README"
+          test -f "$APPDIR/usr/bin/airflash-engine"
+          ARTIFACT=$(ls dist/AppImage/AirFlash-*-x86_64.AppImage)
+          echo "$ARTIFACT" | grep -Eq '^dist/AppImage/AirFlash-[0-9]+\.[0-9]+\.[0-9]+-x86_64\.AppImage$'
+          file "$ARTIFACT" | grep -q 'AppImage'
+          test -s dist/AppImage/SHA256SUMS.txt
+          (cd dist/AppImage && sha256sum -c SHA256SUMS.txt)
+      - name: AppImage runs headless
+        run: |
+          ARTIFACT=$(ls dist/AppImage/AirFlash-*-x86_64.AppImage)
+          WORK=$(mktemp -d)
+          cd "$WORK"
+          cp "$GITHUB_WORKSPACE/$ARTIFACT" ./AirFlash.AppImage
+          chmod +x AirFlash.AppImage
+          ./AirFlash.AppImage --appimage-extract >/dev/null
+          ./squashfs-root/AppRun version
+          ./squashfs-root/AppRun help >/dev/null
+          RUNTIME=$(mktemp -d)
+          AIRFLASH_RUNTIME_DIR="$RUNTIME" HOME="$RUNTIME" ./squashfs-root/AppRun status --json
+          rm -rf "$WORK" "$RUNTIME"
+      - name: Python packaging tests (including a fresh AppImage build)
+        env:
+          AIRFLASH_BUILD_APPIMAGE: '1'
+        run: |
+          uv run pytest tests/test_linux_packaging.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: airflash-linux-appimage
+          path: |
+            dist/AppImage/AirFlash-*-x86_64.AppImage
+            dist/AppImage/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: linux-failure-logs
+          path: |
+            build/appimage/**/*.log
+            native/airflash-engine/target/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
