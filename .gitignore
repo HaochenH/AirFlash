@@ -49,6 +49,10 @@ artifacts/
 **/TestResults/
 *.zip
 
+# ...but the native engine's CLI source lives in src/bin.
+!native/airflash-engine/src/bin/
+!native/airflash-engine/src/bin/**
+
 # Local agent instructions and private material
 AGENTS.md
 .env

@@ -23,6 +23,7 @@ dependencies = [
  "ed25519-dalek",
  "hkdf",
  "hound",
+ "libc",
  "num-bigint",
  "plist",
  "rand",
