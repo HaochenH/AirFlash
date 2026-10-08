@@ -21,7 +21,8 @@ impl Loopback {
         _equalizer: crate::equalizer::Control,
     ) -> Result<Self> {
         anyhow::bail!(
-            "loopback source is currently only available on Windows WASAPI; on Linux use source=wav in this release"
+            "system-audio capture is not implemented on Linux yet (PipeWire/PulseAudio); \
+             run the headless CLI with --source file or --source simulated instead"
         );
     }
 

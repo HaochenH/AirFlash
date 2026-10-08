@@ -69,11 +69,14 @@ fn default_source() -> String {
 fn default_timing() -> String {
     "ptp".into()
 }
+/// Sources that can stream without a bounded duration: system capture plus the
+/// testable file and simulated inputs.
+const LIVE_SOURCES: [&str; 3] = ["loopback", "file", "simulated"];
 impl ProbeOptions {
     pub fn validate_start(&self) -> Result<()> {
         ensure!(
-            self.source == "loopback" && self.duration_ms == 0,
-            "start requires unbounded loopback source"
+            LIVE_SOURCES.contains(&self.source.as_str()) && self.duration_ms == 0,
+            "start requires an unbounded live source (loopback, file or simulated)"
         );
         ensure!(
             self.gain.is_finite() && (0.0..=1.0).contains(&self.gain),
@@ -90,7 +93,7 @@ impl ProbeOptions {
         self.equalizer.validate()?;
         ensure!(!self.equalizer.enabled, "finite probes require the equalizer to be disabled");
         ensure!(
-            self.source == "wav" || self.source == "loopback",
+            self.source == "wav" || LIVE_SOURCES.contains(&self.source.as_str()),
             "unknown audio source"
         );
         ensure!(
@@ -456,6 +459,74 @@ impl Drop for Member {
     }
 }
 
+/// Every live capture backend behind one interface so the sender loop stays
+/// platform neutral. `System` is Windows WASAPI loopback (and a documented
+/// unavailable boundary on Linux); `Stream` is the testable file/simulated input.
+enum Live {
+    System(crate::live::Loopback),
+    Stream(crate::source::StreamSource),
+}
+trait LiveSource {
+    fn ready(&self) -> Result<bool>;
+    fn packet(&self, gain: f32) -> Result<(Vec<u8>, Option<u64>)>;
+    fn discard_stale(&self);
+    fn metrics(&self) -> Json;
+}
+impl LiveSource for crate::live::Loopback {
+    fn ready(&self) -> Result<bool> {
+        self.ready()
+    }
+    fn packet(&self, gain: f32) -> Result<(Vec<u8>, Option<u64>)> {
+        self.packet(gain)
+    }
+    fn discard_stale(&self) {
+        self.discard_stale()
+    }
+    fn metrics(&self) -> Json {
+        serde_json::to_value(self.metrics()).unwrap_or(Json::Null)
+    }
+}
+impl LiveSource for crate::source::StreamSource {
+    fn ready(&self) -> Result<bool> {
+        self.ready()
+    }
+    fn packet(&self, gain: f32) -> Result<(Vec<u8>, Option<u64>)> {
+        self.packet(gain)
+    }
+    fn discard_stale(&self) {
+        self.discard_stale()
+    }
+    fn metrics(&self) -> Json {
+        serde_json::to_value(self.metrics()).unwrap_or(Json::Null)
+    }
+}
+impl LiveSource for Live {
+    fn ready(&self) -> Result<bool> {
+        match self {
+            Self::System(source) => source.ready(),
+            Self::Stream(source) => source.ready(),
+        }
+    }
+    fn packet(&self, gain: f32) -> Result<(Vec<u8>, Option<u64>)> {
+        match self {
+            Self::System(source) => source.packet(gain),
+            Self::Stream(source) => source.packet(gain),
+        }
+    }
+    fn discard_stale(&self) {
+        match self {
+            Self::System(source) => source.discard_stale(),
+            Self::Stream(source) => source.discard_stale(),
+        }
+    }
+    fn metrics(&self) -> Json {
+        match self {
+            Self::System(source) => LiveSource::metrics(source),
+            Self::Stream(source) => LiveSource::metrics(source),
+        }
+    }
+}
+
 fn load_quiet_wav(options: &ProbeOptions) -> Result<Vec<i16>> {
     let rate = options.sample_rate;
     let mut reader = hound::WavReader::open(&options.wav_path).context("open probe WAV")?;
@@ -570,14 +641,25 @@ pub fn probe_with_controls(
             .map_err(|error| Fault::from_error(member.peer.host, "control", &error))?;
     }
     let rate = options.sample_rate;
-    let live = if options.source == "loopback" {
-        Some(crate::live::Loopback::start(
+    let live: Option<Live> = match options.source.as_str() {
+        "loopback" => Some(Live::System(crate::live::Loopback::start(
             options.capture_endpoint.clone(),
             rate,
             equalizer,
-        )?)
-    } else {
-        None
+        )?)),
+        "file" => Some(Live::Stream(crate::source::StreamSource::start(
+            crate::source::Kind::File,
+            options.wav_path.as_path(),
+            rate,
+            equalizer,
+        )?)),
+        "simulated" => Some(Live::Stream(crate::source::StreamSource::start(
+            crate::source::Kind::Simulated,
+            options.wav_path.as_path(),
+            rate,
+            equalizer,
+        )?)),
+        _ => None,
     };
     if let Some(source) = &live {
         let until = Instant::now() + Duration::from_millis(200);

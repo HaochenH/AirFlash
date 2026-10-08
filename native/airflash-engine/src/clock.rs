@@ -35,6 +35,15 @@ impl Clock {
         self.epoch_ns + self.origin.elapsed().as_nanos() as u64
     }
 }
+
+/// Wall-clock nanoseconds for capture timestamps. Monotonicity is not required:
+/// these values only feed queue-age diagnostics and onset markers.
+pub fn unix_ns() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
+}
 fn header(kind: u8, len: usize, clock: u64, seq: u16, flags: u16, interval: i8) -> Vec<u8> {
     let mut p = vec![0; len];
     p[0] = 0x10 | kind;
@@ -94,8 +103,13 @@ pub struct PtpMaster {
 }
 impl PtpMaster {
     pub fn start(peers: Vec<IpAddr>, clock: Clock) -> Result<Self> {
-        let event = UdpSocket::bind("0.0.0.0:319").context("PTP event port 319 unavailable")?;
-        let general = UdpSocket::bind("0.0.0.0:320").context("PTP general port 320 unavailable")?;
+        // PTP event/general ports are below the unprivileged port range. A user
+        // service can grant them with net.ipv4.ip_unprivileged_port_start<=319
+        // (or ambient capabilities); timing="ntp" avoids the privileged ports.
+        let event = UdpSocket::bind("0.0.0.0:319")
+            .context("PTP event port 319 unavailable; use timing=ntp, or set net.ipv4.ip_unprivileged_port_start<=319")?;
+        let general = UdpSocket::bind("0.0.0.0:320")
+            .context("PTP general port 320 unavailable; use timing=ntp, or set net.ipv4.ip_unprivileged_port_start<=319")?;
         event.set_nonblocking(true)?;
         general.set_nonblocking(true)?;
         let clock_id = rand::random::<u64>() & 0x7fff_ffff_ffff_ffff;
