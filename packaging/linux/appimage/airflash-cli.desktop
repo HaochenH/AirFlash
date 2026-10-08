@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=AirFlash
+GenericName=AirPlay 2 Audio Sender
+Comment=Stream Linux desktop audio to HomePod (headless CLI preview)
+Exec=airflash-cli
+Icon=airflash-cli
+Terminal=true
+Categories=AudioVideo;Audio;Network;
+Keywords=airplay;homepod;audio;streaming;airflash;
+Version=1.0
+X-AppImage-Version=@VERSION@

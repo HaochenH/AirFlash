@@ -1,0 +1,35 @@
+#!/bin/sh
+# AppRun for the AirFlash AppImage (headless CLI slice).
+#
+# The engine is a command line binary; there is no GUI to start. This wrapper
+# only resolves the AppDir, fills in runtime locations that AppImages do not
+# inherit when launched from a file manager, and execs the CLI.
+set -eu
+
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# AppImages mount at /tmp/.mount_XXXXXX; $APPDIR is exported by the runtime.
+APPDIR=${APPDIR:-$HERE}
+BIN="$APPDIR/usr/bin/airflash-cli"
+
+if [ ! -x "$BIN" ]; then
+    echo "AirFlash AppImage is incomplete: $BIN is missing" >&2
+    exit 127
+fi
+
+# State, logs and the control socket need a writable per-user location.
+# XDG_RUNTIME_DIR is normally set by systemd --user or a login session; AppImages
+# launched from a desktop file or a service unit may not have it.
+if [ -z "${AIRFLASH_RUNTIME_DIR:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    HOME_DIR=${HOME:-/tmp}
+    AIRFLASH_RUNTIME_DIR="$HOME_DIR/.local/state/airflash"
+    mkdir -p "$AIRFLASH_RUNTIME_DIR"
+    chmod 700 "$AIRFLASH_RUNTIME_DIR" 2>/dev/null || true
+    export AIRFLASH_RUNTIME_DIR
+fi
+
+if [ -z "${XDG_CONFIG_HOME:-}" ] && [ -n "${HOME:-}" ]; then
+    XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_CONFIG_HOME
+fi
+
+exec "$BIN" "$@"

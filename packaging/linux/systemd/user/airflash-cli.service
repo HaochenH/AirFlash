@@ -1,0 +1,34 @@
+[Unit]
+# AirFlash headless AirPlay 2 sender, running as a normal user.
+# Copy to ~/.config/systemd/user/ and enable it; no root privileges are needed.
+Description=AirFlash headless AirPlay 2 sender
+Documentation=file:///usr/share/doc/airflash-cli/README
+After=network-online.target sound.target
+Wants=network-online.target
+# Give a crashing session a few retries, then stay failed and visible.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# State, log and control socket live in the per-user runtime directory so the
+# service never writes to /tmp. %t is XDG_RUNTIME_DIR for user units.
+Environment=AIRFLASH_RUNTIME_DIR=%t/airflash
+# Optional extras; the ExecStart path assumes the packaged location. If you run
+# the CLI from somewhere else, edit ExecStart in your ~/.config/systemd/user copy.
+EnvironmentFile=-%h/.config/airflash/cli.env
+ExecStart=/usr/bin/airflash-cli start --foreground --quiet --config %h/.config/airflash/cli.json
+# The daemon turns SIGTERM into a graceful RTSP teardown, so no ExecStop is
+# needed; KillSignal/TimeoutStopSec only bound a stuck shutdown.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+# Audio backends available to a user session (PipeWire/PulseAudio) are reached
+# through the user's session bus, which systemd --user already imports.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=airflash-cli
+
+[Install]
+WantedBy=default.target

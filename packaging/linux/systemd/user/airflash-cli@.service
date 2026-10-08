@@ -1,0 +1,28 @@
+[Unit]
+# AirFlash headless sender, one instance per named receiver profile.
+# Enable with:  systemctl --user enable --now airflash-cli@living-room.service
+# The instance name selects ~/.config/airflash/cli-<instance>.json and keeps its
+# own runtime state under %t/airflash/<instance>, so several receivers can run
+# at once. Keep instance names simple: letters, digits, dot, dash, underscore.
+Description=AirFlash headless AirPlay 2 sender (%i)
+Documentation=file:///usr/share/doc/airflash-cli/README
+After=network-online.target sound.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=AIRFLASH_RUNTIME_DIR=%t/airflash/%i
+EnvironmentFile=-%h/.config/airflash/cli-%i.env
+ExecStart=/usr/bin/airflash-cli start --foreground --quiet --config %h/.config/airflash/cli-%i.json
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=airflash-cli-%i
+
+[Install]
+WantedBy=default.target
