@@ -103,9 +103,11 @@ if [ "$VARIANT" = "full" ]; then
     log "publishing the Avalonia UI (self-contained, $DOTNET_RUNTIME)"
     GUI_PUBLISH="$BUILD_DIR/gui"
     rm -rf "$GUI_PUBLISH"
+    # Release, self-contained, no debug symbols: the AppImage ships only what runs.
     dotnet publish "$REPO_ROOT/desktop/AirFlash.UI/AirFlash.UI.csproj" \
         -c Release -r "$DOTNET_RUNTIME" --self-contained true \
         -p:PublishSingleFile=false -p:DeterministicBuild=true \
+        -p:DebugType=none -p:DebugSymbols=false \
         -o "$GUI_PUBLISH" >/dev/null || fail "dotnet publish failed"
     [ -x "$GUI_PUBLISH/AirFlash.UI" ] || fail "the published UI is missing"
 fi
@@ -198,10 +200,21 @@ else
     log "skipping AppRun execution check: $TARGET binaries cannot run on $HOST_TRIPLE"
 fi
 
-# appimagetool itself is an AppImage, which needs FUSE. GitHub runners and many
-# containers have none, so extract and run the payload instead of executing it.
-TOOL=${AIRFLASH_APPIMAGETOOL:-}
-if [ -z "$TOOL" ]; then
+# appimagetool is itself an AppImage: it needs FUSE and must match the host
+# architecture. Only fetch it when this machine can actually run it; a cross
+# build assembles the image from the official runtime and mksquashfs instead.
+if [ "$HOST_TRIPLE" != "$TARGET" ] && [ -n "${AIRFLASH_APPIMAGETOOL:-}" ]; then
+    HOST_CAN_RUN_TOOL=true
+elif [ "$HOST_TRIPLE" = "$TARGET" ]; then
+    HOST_CAN_RUN_TOOL=true
+else
+    HOST_CAN_RUN_TOOL=false
+fi
+
+TOOL=""
+if [ "$HOST_CAN_RUN_TOOL" = "true" ]; then
+  TOOL=${AIRFLASH_APPIMAGETOOL:-}
+  if [ -z "$TOOL" ]; then
     TOOLS_DIR="$BUILD_DIR/tools"
     mkdir -p "$TOOLS_DIR"
     TOOL="$TOOLS_DIR/appimagetool"
@@ -216,22 +229,46 @@ if [ -z "$TOOL" ]; then
             || fail "cannot download appimagetool"
         chmod +x "$ARCHIVE"
         rm -rf "$TOOLS_DIR/squashfs-root"
-        # Extraction needs no FUSE, but the tool itself must match this machine.
+        # Extraction itself needs no FUSE; the extracted payload then runs natively.
         (cd "$TOOLS_DIR" && "$ARCHIVE" --appimage-extract >/dev/null) \
-            || fail "cannot extract appimagetool (missing FUSE or wrong architecture); install appimagetool and set AIRFLASH_APPIMAGETOOL"
+            || fail "cannot extract appimagetool; install it and set AIRFLASH_APPIMAGETOOL"
         rm -f "$ARCHIVE"
         printf '#!/bin/sh\nexec "%s/squashfs-root/AppRun" "$@"\n' "$TOOLS_DIR" > "$TOOL"
         chmod +x "$TOOL"
     fi
+  fi
+  [ -x "$TOOL" ] || fail "appimagetool at $TOOL is not executable"
+else
+  log "assembling an $ARCH image from $HOST_TRIPLE with the official runtime"
 fi
-[ -x "$TOOL" ] || fail "appimagetool at $TOOL is not executable"
 
-mkdir -p "$OUTPUT_DIR"
+TOOLS_DIR=${TOOLS_DIR:-$BUILD_DIR/tools}
+RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$ARCH"
+
 ARTIFACT="$OUTPUT_DIR/$APP_NAME-$VERSION-$ARCH$SUFFIX.AppImage"
+mkdir -p "$OUTPUT_DIR" "$TOOLS_DIR"
 log "packaging $ARTIFACT"
 rm -f "$ARTIFACT"
-ARCH=$ARCH "$TOOL" --no-appstream "$APPDIR" "$ARTIFACT" >/dev/null \
-    || fail "appimagetool failed"
+if [ "$HOST_CAN_RUN_TOOL" = "true" ]; then
+    ARCH=$ARCH "$TOOL" --no-appstream "$APPDIR" "$ARTIFACT" >/dev/null \
+        || fail "appimagetool failed"
+else
+    command -v mksquashfs >/dev/null 2>&1 || fail "mksquashfs is required (install squashfs-tools)"
+    RUNTIME="$TOOLS_DIR/runtime-$ARCH"
+    mkdir -p "$TOOLS_DIR"
+    if [ ! -s "$RUNTIME" ]; then
+        log "downloading the $ARCH AppImage runtime"
+        curl -fsSL --retry 3 -o "$RUNTIME" "$RUNTIME_URL" || fail "cannot download $RUNTIME_URL"
+    fi
+    [ -s "$RUNTIME" ] || fail "runtime image is missing"
+    SQUASHFS="$BUILD_DIR/$APP_NAME-$ARCH.squashfs"
+    rm -f "$SQUASHFS"
+    mksquashfs "$APPDIR" "$SQUASHFS" -root-owned -noappend -comp gzip -quiet >/dev/null \
+        || fail "mksquashfs failed"
+    cat "$RUNTIME" "$SQUASHFS" > "$ARTIFACT" || fail "cannot assemble the AppImage"
+    chmod 0755 "$ARTIFACT"
+    rm -f "$SQUASHFS"
+fi
 [ -s "$ARTIFACT" ] || fail "AppImage was not produced"
 SIZE=$(wc -c < "$ARTIFACT")
 [ "$SIZE" -gt 1000000 ] || fail "AppImage is suspiciously small ($SIZE bytes)"
