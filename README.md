@@ -26,27 +26,34 @@ a SmartScreen warning because release binaries are not code-signed. Use
 **More info** and **Run anyway** only when the downloaded files are from a
 source you trust.
 
-## Linux (headless preview)
+## Linux preview
 
-Linux is supported through a headless command line binary that reuses the same
-native AirPlay 2 sender: `airflash-cli`. There is no graphical UI, and desktop
-audio capture is **not implemented yet** (PipeWire/PulseAudio); the CLI can
-stream a file or a deterministic test signal, which is how the automated tests
-exercise the transport.
+Two ways to run AirFlash on Linux, both reusing the same native sender:
+
+- **Headless** (`airflash-cli`): discover, pair, start in the background, stop,
+  inspect status and logs, change volume — no graphical desktop required.
+- **Graphical panel** (`AirFlash.UI`, Avalonia): the Windows panel's layout,
+  receiver list, per-device volume, equalizer, diagnostics and settings, built
+  from the shared .NET Core layer.
+
+Desktop audio capture is **not implemented yet** (PipeWire/PulseAudio), so the
+Linux panel streams a simulated test signal or a WAV file. That keeps the whole
+transport path real and testable, and the limitation is stated in the UI and the
+documentation instead of being hidden.
 
 ```bash
 airflash-cli discover
 airflash-cli pair --host 192.168.1.42
 airflash-cli start --host 192.168.1.42 --source simulated --daemon
 airflash-cli status
-airflash-cli logs
 airflash-cli stop
 ```
 
-A repeatable build produces an x86_64 AppImage, and a `systemd --user` unit
-runs the sender in the background without root. See
-[docs/LINUX.md](docs/LINUX.md) for dependencies, the systemd units, the
-AppImage layout, the audio boundaries, and the known limitations.
+A repeatable build produces an x86_64 AppImage (headless only, or together with
+the panel), and a `systemd --user` unit runs the sender in the background without
+root. See [docs/LINUX.md](docs/LINUX.md) for dependencies, building the Avalonia
+frontend, the systemd units, the AppImage layout, the audio boundaries, and the
+known limitations.
 
 ## Key features
 

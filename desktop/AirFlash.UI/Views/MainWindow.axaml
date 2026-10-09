@@ -1,0 +1,118 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:AirFlash.UI"
+        xmlns:vm="using:AirFlash.UI.ViewModels"
+        x:Class="AirFlash.UI.Views.MainWindow"
+        x:DataType="vm:AppViewModel"
+        Title="AirFlash"
+        Width="460"
+        Height="640"
+        MinWidth="440"
+        MinHeight="420"
+        CanResize="True"
+        UseLayoutRounding="True"
+        WindowStartupLocation="CenterScreen">
+  <Window.Styles>
+    <Style Selector="Border.ReceiverCard">
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+    <Style Selector="Border.ReceiverCard.Active">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+  </Window.Styles>
+  <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="16" Background="{DynamicResource CanvasBrush}">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+      <Grid Margin="2,0,0,18" ColumnDefinitions="*,Auto,Auto">
+        <StackPanel Orientation="Horizontal">
+          <Image Source="/Assets/app.png" Width="26" Height="26" VerticalAlignment="Center" Margin="0,2,10,0" />
+          <TextBlock Text="AirFlash" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="IconButton" ToolTip.Tip="{loc:Text 'Settings'}" Click="OnSettings" Margin="0,0,7,0">
+          <TextBlock Text="&#xE713;" FontSize="16" />
+        </Button>
+        <Button Grid.Column="2" Classes="IconButton" ToolTip.Tip="{loc:Text 'Quit'}" Click="OnQuit">
+          <TextBlock Text="&#xE7E8;" FontSize="14" />
+        </Button>
+      </Grid>
+      <Border Grid.Row="1" Padding="10" CornerRadius="6" Background="{DynamicResource TintBrush}" Margin="0,0,0,12"
+              IsVisible="{Binding Notice, Converter={StaticResource NonEmpty}}">
+        <TextBlock Text="{Binding Notice}" Classes="HintText" />
+      </Border>
+      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="440">
+        <StackPanel>
+          <Border x:Name="EmptyState" Classes="ReceiverCard" Padding="18,28" IsVisible="{Binding !Receivers.Count}">
+            <StackPanel>
+              <TextBlock Text="{loc:Text 'Searching for receivers'}" FontWeight="SemiBold" TextAlignment="Center" />
+              <TextBlock Text="{loc:Text 'Connect your PC and HomePod to the same network,&#10;or add a receiver in settings.'}"
+                         Classes="HintText" TextAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+          </Border>
+          <ItemsControl ItemsSource="{Binding Receivers}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ReceiverViewModel">
+                <Border Classes="ReceiverCard" Classes.Active="{Binding Active}" CornerRadius="10">
+                  <Grid ColumnDefinitions="42,*,42" RowDefinitions="Auto,Auto">
+                    <Border Background="{DynamicResource TintBrush}" Width="32" Height="36" CornerRadius="8" VerticalAlignment="Top">
+                      <TextBlock Text="&#xE703;" FontSize="19" Foreground="{DynamicResource AccentBrush}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding StateText}" Classes="HintText" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="IconButton" Content="{Binding PlayGlyph}" Command="{Binding ToggleCommand}"
+                            ToolTip.Tip="{Binding PlayHint}" Foreground="{DynamicResource AccentBrush}" />
+                    <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,9,0,0" ColumnDefinitions="108,*,40,Auto">
+                      <TextBlock Text="{Binding VolumeStatus}" Classes="HintText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0" />
+                      <Slider Grid.Column="1" Classes="AccentSlider" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                              Value="{Binding Volume, Mode=TwoWay}" VerticalAlignment="Center"
+                              ToolTip.Tip="{loc:Text 'Device volume'}" />
+                      <TextBlock Grid.Column="2" Text="{Binding VolumeText}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource MutedBrush}" />
+                      <Button Grid.Column="3" Content="{Binding MuteLabel}" Command="{Binding MuteCommand}" Width="64" Padding="8,4" Margin="10,0,0,0" FontSize="11" />
+                    </Grid>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+      <StackPanel Grid.Row="3">
+        <Grid Margin="2,4,2,14" ColumnDefinitions="*,190">
+          <TextBlock Text="{loc:Text 'Latency mode'}" VerticalAlignment="Center" Classes="HintText" />
+          <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:Choices.Latencies}" DisplayMemberBinding="{Binding Label}"
+                    SelectedValueBinding="{Binding Value}" SelectedValue="{Binding LatencyMode, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+        </Grid>
+        <Border Padding="12" Margin="0,0,0,10" CornerRadius="10" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+          <Grid ColumnDefinitions="108,*,40,Auto">
+            <TextBlock Text="{loc:Text 'Master volume'}" VerticalAlignment="Center" Margin="0,0,14,0" FontWeight="SemiBold" />
+            <Slider Grid.Column="1" Classes="AccentSlider" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                    Value="{Binding MasterVolume, Mode=TwoWay}" VerticalAlignment="Center" ToolTip.Tip="{loc:Text 'Master volume'}" />
+            <TextBlock Grid.Column="2" Text="{Binding MasterVolume, StringFormat={}{0}%}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+            <Button Grid.Column="3" Content="{Binding MuteLabel}" Command="{Binding MuteCommand}" Width="64" Padding="8,4" Margin="10,0,0,0" FontSize="11" />
+          </Grid>
+        </Border>
+      </StackPanel>
+      <StackPanel Grid.Row="4" Margin="2,4,2,0">
+        <DockPanel>
+          <Ellipse Width="6" Height="6" Fill="{DynamicResource AccentBrush}" Margin="0,0,7,0" />
+          <TextBlock Text="{Binding StatusTitle}" FontWeight="SemiBold" FontSize="12" />
+        </DockPanel>
+        <TextBlock Text="{Binding StatusDetail}" Classes="HintText" Margin="13,4,0,0" MaxHeight="62" TextTrimming="CharacterEllipsis" />
+        <Expander Header="{loc:Text 'View error details'}" IsVisible="{Binding ErrorDetails, Converter={StaticResource NonEmpty}}" Margin="0,8,0,0">
+          <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+            <TextBlock Text="{Binding ErrorDetails}" Classes="HintText" Margin="0,8,0,0" />
+          </ScrollViewer>
+        </Expander>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

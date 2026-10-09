@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>AirFlash.UI</AssemblyName>
+    <RootNamespace>AirFlash.UI</RootNamespace>
+    <Version>0.4.0</Version>
+    <Product>AirFlash</Product>
+    <!-- Reflection bindings keep the ported ViewModels bindable by name, like the WPF originals. -->
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- desktop/Directory.Build.props targets win-x64 for the Windows release;
+         this project is the Linux slice and stays portable. -->
+    <RuntimeIdentifiers></RuntimeIdentifiers>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AirFlash.Core/AirFlash.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.11" Condition="'$(Configuration)' == 'Debug'" />
+    <!-- Avalonia pulls in Tmds.DBus.Protocol 0.21.2 transitively, which carries
+         GHSA-xrw6-gwf8-vvr9. Pin the patched release of the same minor line so the
+         audit passes with warnings-as-errors, without jumping API versions. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+  </ItemGroup>
+</Project>

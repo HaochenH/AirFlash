@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:AirFlash.UI"
+        x:Class="AirFlash.UI.Views.ManualReceiverDialog"
+        Title="{loc:Text 'Add receiver manually'}"
+        Width="420" Height="250"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+  <StackPanel Margin="20">
+    <TextBlock Text="{loc:Text 'Name (optional)'}" Classes="HintText" Margin="0,0,0,6" />
+    <TextBox x:Name="NameBox" Margin="0,0,0,14" />
+    <Grid ColumnDefinitions="*,12,120">
+      <StackPanel>
+        <TextBlock Text="{loc:Text 'Address'}" Classes="HintText" Margin="0,0,0,6" />
+        <TextBox x:Name="HostBox" Watermark="192.168.1.42" />
+      </StackPanel>
+      <StackPanel Grid.Column="2">
+        <TextBlock Text="{loc:Text 'Port'}" Classes="HintText" Margin="0,0,0,6" />
+        <TextBox x:Name="PortBox" Text="7000" />
+      </StackPanel>
+    </Grid>
+    <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+      <Button Content="{loc:Text 'Add'}" Click="OnAdd" IsDefault="True" MinWidth="84" Margin="0,0,8,0" />
+      <Button Content="{loc:Text 'Cancel'}" Click="OnCancel" IsCancel="True" MinWidth="84" />
+    </StackPanel>
+  </StackPanel>
+</Window>

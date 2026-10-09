@@ -1,0 +1,369 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:AirFlash.UI"
+        xmlns:vm="using:AirFlash.UI.ViewModels"
+        xmlns:services="using:AirFlash.UI.Services"
+        x:Class="AirFlash.UI.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="{loc:Text 'AirFlash settings'}"
+        Width="900" Height="660"
+        MinWidth="640" MinHeight="440"
+        WindowStartupLocation="CenterScreen">
+  <Window.Resources>
+    <DataTemplate x:Key="Page0" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Startup and connection'}" Classes="SectionTitleText" />
+            <CheckBox Content="{loc:Text 'Start when signing in'}" IsChecked="{Binding Draft.StartAtLogin}" Margin="0,0,0,13" />
+            <CheckBox Content="{loc:Text 'Connect automatically when a receiver is found'}" IsChecked="{Binding Draft.AutoConnectOnDiscover}" Margin="0,0,0,13" />
+            <CheckBox Content="{loc:Text 'Reconnect automatically after a disconnect'}" IsChecked="{Binding Draft.ForceReconnect}" Margin="0,0,0,13" />
+            <StackPanel Orientation="Horizontal" IsEnabled="{Binding Draft.ForceReconnect}" Margin="0,0,0,13">
+              <TextBlock Text="{loc:Text 'Retry up to'}" VerticalAlignment="Center" Margin="0,0,16,0" />
+              <TextBox Width="80" Text="{Binding Draft.MaxReconnectAttempts}" />
+              <TextBlock Text="{loc:Text 'times'}" VerticalAlignment="Center" Margin="10,0,0,0" />
+            </StackPanel>
+            <TextBlock Text="{loc:Text 'Keep running in the tray when the panel closes. Choose Quit from the tray menu to exit.'}" Classes="HintText" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Other'}" Classes="SectionTitleText" />
+            <Grid ColumnDefinitions="*,20,*">
+              <StackPanel>
+                <TextBlock Text="{loc:Text 'Language'}" Classes="HintText" Margin="0,0,0,8" />
+                <ComboBox ItemsSource="{x:Static vm:Choices.Languages}" DisplayMemberBinding="{Binding Label}"
+                          SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Draft.UiLanguage, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" />
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="{loc:Text 'Theme'}" Classes="HintText" Margin="0,0,0,8" />
+                <ComboBox ItemsSource="{x:Static vm:Choices.Themes}" DisplayMemberBinding="{Binding Label}"
+                          SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Draft.Theme, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page1" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Latency mode'}" Classes="SectionTitleText" />
+            <RadioButton Content="{loc:Text 'Real-time · target 120 ms'}" GroupName="LatencyMode" IsChecked="{Binding Draft.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=realtime}" />
+            <RadioButton Content="{loc:Text 'Normal · target 200 ms'}" GroupName="LatencyMode" IsChecked="{Binding Draft.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=normal}" />
+            <RadioButton Content="{loc:Text 'Buffered · target 500 ms'}" GroupName="LatencyMode" IsChecked="{Binding Draft.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=buffered}" />
+            <RadioButton Content="{loc:Text 'Custom target latency'}" GroupName="LatencyMode" IsChecked="{Binding Draft.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=custom}" />
+            <StackPanel Orientation="Horizontal" Margin="26,0,0,12" IsEnabled="{Binding Draft.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=custom}">
+              <TextBox Width="100" Text="{Binding Draft.CustomBufferMs}" />
+              <TextBlock Text="{loc:Text 'ms (0–2000)'}" VerticalAlignment="Center" Margin="10,0,0,0" Classes="HintText" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Stream format'}" Classes="SectionTitleText" />
+            <RadioButton Content="{loc:Text '44.1 kHz · 16-bit (default)'}" GroupName="Rate" IsChecked="{Binding Draft.StreamSampleRate, Converter={StaticResource Equal}, ConverterParameter=44100}" />
+            <RadioButton Content="{loc:Text '48 kHz · 16-bit'}" GroupName="Rate" IsChecked="{Binding Draft.StreamSampleRate, Converter={StaticResource Equal}, ConverterParameter=48000}" />
+            <TextBlock Text="{loc:Text 'Timing uses the AirPlay PTP profile when the privileged ports are available; otherwise choose NTP in the config file.'}" Classes="HintText" Margin="0,14,0,0" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Standby'}" Classes="SectionTitleText" />
+            <CheckBox Content="{loc:Text 'Enter standby when no audio is playing'}" IsChecked="{Binding Draft.StandbyEnabled}" Margin="0,0,0,13" />
+            <StackPanel Orientation="Horizontal" IsEnabled="{Binding Draft.StandbyEnabled}">
+              <TextBlock Text="{loc:Text 'Silence duration'}" VerticalAlignment="Center" Margin="0,0,16,0" />
+              <TextBox Width="80" Text="{Binding Draft.StandbySilenceSeconds}" />
+              <TextBlock Text="{loc:Text 'seconds (5–300)'}" VerticalAlignment="Center" Margin="10,0,0,0" Classes="HintText" />
+            </StackPanel>
+            <TextBlock Text="{loc:Text 'Stay connected during standby and resume when audio is detected.'}" Classes="HintText" Margin="0,14,0,0" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page2" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <CheckBox Content="{loc:Text 'Enable equalizer'}" IsChecked="{Binding Equalizer.Enabled}" Margin="0,0,0,13" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+              <StackPanel IsEnabled="{Binding Equalizer.Enabled}">
+                <TextBlock Text="{loc:Text 'Preset'}" Classes="HintText" Margin="0,0,0,6" />
+                <ComboBox ItemsSource="{Binding Equalizer.Presets}" DisplayMemberBinding="{Binding Label}"
+                          SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Equalizer.SelectedPreset, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" />
+              </StackPanel>
+              <Button Grid.Column="1" Content="{loc:Text 'Reset'}" Command="{Binding Equalizer.ResetCommand}" VerticalAlignment="Bottom" Margin="12,0,0,0" />
+            </Grid>
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Frequency bands'}" Classes="SectionTitleText" />
+            <ScrollViewer x:Name="BandScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Equalizer.Bands}" IsEnabled="{Binding Equalizer.Enabled}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:EqualizerBandEditor">
+                    <StackPanel Width="56">
+                      <TextBlock Text="{Binding GainLabel}" HorizontalAlignment="Center" FontSize="11" Margin="0,0,0,8" />
+                      <Slider Classes="AccentSlider" Orientation="Vertical" Height="162" HorizontalAlignment="Center"
+                              Minimum="-12" Maximum="12" TickFrequency="0.5" SmallChange="0.5" LargeChange="3" IsSnapToTickEnabled="True"
+                              Value="{Binding Gain, Mode=TwoWay}" ToolTip.Tip="{Binding GainLabel}" />
+                      <TextBlock Text="{Binding Label}" HorizontalAlignment="Center" FontSize="11" Margin="0,10,0,0" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel IsEnabled="{Binding Equalizer.Enabled}">
+            <DockPanel Margin="0,0,0,10">
+              <TextBlock Text="{loc:Text 'Preamp'}" Classes="SectionTitleText" Margin="0" />
+              <TextBlock Text="{Binding Equalizer.PreampLabel}" HorizontalAlignment="Right" />
+            </DockPanel>
+            <Slider Classes="AccentSlider" Minimum="-12" Maximum="12" TickFrequency="0.5" SmallChange="0.5" LargeChange="3" IsSnapToTickEnabled="True"
+                    Value="{Binding Equalizer.PreampDb, Mode=TwoWay}" />
+            <TextBlock Text="{Binding Equalizer.HeadroomLabel}" Classes="HintText" Margin="0,12,0,0" />
+          </StackPanel>
+        </Border>
+        <TextBlock Text="{loc:Text 'Changes are previewed during playback. Apply saves them; Cancel or closing restores the last saved sound. Automatic attenuation reduces clipping risk and may lower the volume.'}" Classes="HintText" />
+        <TextBlock Text="{Binding EqualizerError}" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page3" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Audio source'}" Classes="SectionTitleText" />
+            <TextBlock Text="{loc:Text 'Linux streams a selected input instead of the desktop mixer. System audio capture (PipeWire/PulseAudio) is not implemented yet; the simulated signal and WAV file exercise the same transport path.'}"
+                       Classes="HintText" Margin="0,0,0,16" />
+            <RadioButton Content="{loc:Text 'Simulated test signal'}" GroupName="Source"
+                         IsChecked="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=simulated}" />
+            <TextBlock Text="{loc:Text 'Deterministic 220 Hz left / 330 Hz right tone with one second of silence per second. Output is reproducible, which is what the automated tests check.'}" Classes="HintText" Margin="26,0,0,18" />
+            <RadioButton Content="{loc:Text 'WAV file'}" GroupName="Source"
+                         IsChecked="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=file}" />
+            <Grid Margin="26,0,0,14" IsEnabled="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=file}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding Draft.StreamFilePath}" IsReadOnly="True" />
+                <Button Grid.Column="1" Content="{loc:Text 'Choose…'}" Click="OnChooseFile" Margin="8,0,0,0" />
+              </Grid>
+            </Grid>
+            <RadioButton Content="{loc:Text 'System audio'}" GroupName="Source"
+                         IsChecked="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=loopback}" />
+            <TextBlock Text="{loc:Text 'Not available on Linux yet. Select this on Windows to capture the default output device.'}" Classes="HintText" Margin="26,0,0,0" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Local speakers'}" Classes="SectionTitleText" />
+            <CheckBox Content="{loc:Text 'Mute local output while streaming'}" IsChecked="{Binding Draft.MuteWhileStreaming}" Margin="0,0,0,13" />
+            <TextBlock Text="{loc:Text 'On Linux the sender does not own a mixer session, so this has no effect yet.'}" Classes="HintText" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page4" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Button Content="{loc:Text '＋ Add receiver manually'}" HorizontalAlignment="Left" Command="{Binding AddReceiverCommand}" Margin="0,0,0,16" />
+        <ItemsControl ItemsSource="{Binding Receivers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ReceiverEditor">
+              <Border Classes="Card">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Detail}" Classes="HintText" Margin="0,4,0,14" />
+                  <Grid Margin="0,0,0,14" ColumnDefinitions="110,*">
+                    <TextBlock Text="{loc:Text 'Auto-connect'}" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:Choices.AutoConnect}" DisplayMemberBinding="{Binding Label}"
+                              SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Options.AutoConnect, Mode=TwoWay}" />
+                  </Grid>
+                  <CheckBox Content="{loc:Text 'Hide from control panel'}" IsChecked="{Binding Options.Hidden}" Margin="0,0,0,13" />
+                  <Expander Header="{loc:Text 'Advanced settings'}" Margin="0,0,0,12">
+                    <StackPanel Margin="0,14,0,0">
+                      <TextBlock Text="{loc:Text 'Latency mode'}" Classes="HintText" />
+                      <ComboBox ItemsSource="{x:Static vm:Choices.ReceiverLatencies}" DisplayMemberBinding="{Binding Label}"
+                                SelectedValueBinding="{Binding Value}" SelectedValue="{Binding Options.LatencyMode, Mode=TwoWay}"
+                                Margin="0,4,0,12" />
+                      <StackPanel IsEnabled="{Binding Options.LatencyMode, Converter={StaticResource Equal}, ConverterParameter=custom}">
+                        <TextBlock Text="{loc:Text 'Custom latency / ms (blank uses global)'}" Classes="HintText" />
+                        <TextBox Text="{Binding Options.CustomBufferMs}" Margin="0,4,0,12" />
+                      </StackPanel>
+                      <TextBlock Text="{loc:Text 'Standby threshold / seconds (blank uses global)'}" Classes="HintText" />
+                      <TextBox Text="{Binding Options.StandbySeconds}" Margin="0,4,0,0" />
+                    </StackPanel>
+                  </Expander>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Content="{loc:Text 'Pair…'}" Command="{Binding PairCommand}" ToolTip.Tip="{loc:Text 'Optional: use if the device requires a PIN. Playback starts after pairing.'}" />
+                    <Button Content="{loc:Text 'Remove'}" Command="{Binding RemoveCommand}" IsVisible="{Binding IsManual}" Margin="8,0,0,0" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{loc:Text 'Hidden devices remain here. Additions, removals and device settings are saved when you click Apply. Pairing starts immediately.'}" Classes="HintText" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page5" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{Binding App.StatusTitle}" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding App.StatusDetail}" Classes="HintText" Margin="0,8,0,0" />
+          </StackPanel>
+        </Border>
+        <UniformGrid Columns="2">
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Local capture-to-send p95'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorLatency}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Maximum queue age'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorQueue}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Local underrun packets'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorUnderruns}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Local dropped frames'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorDrops}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Sender recovery count'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorRecoveries}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+          <Border Classes="Card" Margin="0,0,10,12">
+            <StackPanel><TextBlock Text="{loc:Text 'Reconnects during this playback'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorReconnects}" FontSize="25" FontWeight="SemiBold" Margin="0,10,0,0" /></StackPanel>
+          </Border>
+        </UniformGrid>
+        <Border Classes="Card">
+          <StackPanel>
+            <DockPanel Margin="0,0,0,12"><TextBlock Text="{loc:Text 'Input sample rate'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorRate}" HorizontalAlignment="Right" /></DockPanel>
+            <DockPanel Margin="0,0,0,12"><TextBlock Text="{loc:Text 'Stream sample rate'}" Classes="HintText" /><TextBlock Text="{Binding App.MonitorStreamRate}" HorizontalAlignment="Right" /></DockPanel>
+            <DockPanel><TextBlock Text="{loc:Text 'End-to-end acoustic latency'}" Classes="HintText" /><TextBlock Text="{loc:Text 'Not measured'}" HorizontalAlignment="Right" /></DockPanel>
+          </StackPanel>
+        </Border>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Current session uptime'}" Classes="HintText" />
+            <TextBlock Text="{Binding App.MonitorSessionUptime}" Margin="0,6,0,12" />
+            <TextBlock Text="{loc:Text 'Expired media slots skipped'}" Classes="HintText" />
+            <TextBlock Text="{Binding App.MonitorSkipped}" Margin="0,6,0,12" />
+            <TextBlock Text="{loc:Text 'Recoverable warnings'}" Classes="HintText" />
+            <TextBlock Text="{Binding App.MonitorWarnings}" TextWrapping="Wrap" Margin="0,6,0,0" />
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding App.MonitorMembers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TransportMemberViewModel">
+              <Border Classes="Card">
+                <StackPanel>
+                  <TextBlock Text="{Binding Host}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'Last connection failure'}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding App.MonitorLastFault}" TextWrapping="Wrap" Margin="0,8,0,12" />
+            <Expander Header="{loc:Text 'Statistics before the last failure'}">
+              <TextBlock Text="{Binding App.MonitorBeforeFault}" TextWrapping="Wrap" Margin="0,8,0,0" />
+            </Expander>
+          </StackPanel>
+        </Border>
+        <TextBlock Text="{loc:Text 'Local queue and transport statistics update about once per second. Resent packets are sent, not confirmed received. Delay parameters are not acoustic measurements. The last failure snapshot survives reconnection.'}" Classes="HintText" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page6" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Text="{loc:Text 'AirPlay discovery interface'}" Classes="SectionTitleText" />
+            <TextBlock Text="{loc:Text 'Linux discovery browses the local network over mDNS. Choosing one interface is supported when the headless CLI is available; otherwise all interfaces are used.'}" Classes="HintText" Margin="0,0,0,16" />
+            <ComboBox ItemsSource="{Binding DiscoveryAdapters}" DisplayMemberBinding="{Binding Label}"
+                      SelectedValueBinding="{Binding Id}" SelectedValue="{Binding Draft.DiscoveryInterfaceId, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" />
+            <Button Content="{loc:Text 'Refresh interfaces'}" Command="{Binding RefreshAdaptersCommand}" HorizontalAlignment="Left" Margin="0,14,0,0" />
+            <TextBlock Text="{Binding NetworkStatus}" Classes="HintText" Margin="0,14,0,0" TextWrapping="Wrap" />
+            <TextBlock Text="{loc:Text 'If the selected interface disconnects, discovery pauses instead of searching other networks.'}" Classes="HintText" Margin="0,8,0,0" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="Page7" x:DataType="vm:SettingsViewModel">
+      <StackPanel>
+        <Border Classes="Card" Padding="24">
+          <StackPanel>
+            <TextBlock Text="AirFlash" FontSize="30" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" />
+            <TextBlock Text="{x:Static services:AppPaths.VersionLabel}" Classes="HintText" Margin="0,6,0,0" />
+            <WrapPanel Margin="0,20,0,12">
+              <Button Content="{loc:Text 'Check for updates'}" Command="{Binding CheckUpdatesCommand}" Margin="0,0,10,8" />
+              <Button Content="{loc:Text 'Open download page'}" Command="{Binding OpenDownloadCommand}" IsVisible="{Binding Updates.HasUpdate}" Margin="0,0,0,8" />
+            </WrapPanel>
+            <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding Updates.IsChecking}" Margin="0,0,0,8" />
+            <TextBlock Text="{Binding Updates.Status}" Classes="HintText" Margin="0,0,0,12" />
+            <TextBlock Text="{loc:Text 'Stream Linux audio to an AirPlay receiver or an existing HomePod stereo pair.'}" Classes="BodyText" />
+            <TextBlock Text="{loc:Text 'GPLv3 or later, or commercial license · .NET / Avalonia / Rust'}" Classes="HintText" Margin="0,20,0,0" />
+          </StackPanel>
+        </Border>
+        <WrapPanel>
+          <Button Content="{loc:Text 'Third-party licenses'}" Command="{Binding LicensesCommand}" Margin="0,0,10,10" />
+          <Button Content="{loc:Text 'Open log folder'}" Command="{Binding OpenLogsCommand}" Margin="0,0,10,10" />
+          <Button Content="{loc:Text 'Copy diagnostics'}" Command="{Binding CopyDiagnosticsCommand}" Margin="0,0,10,10" />
+        </WrapPanel>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="14,12" />
+      <Setter Property="Margin" Value="0,3" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
+  <Grid Background="{DynamicResource CanvasBrush}" ColumnDefinitions="180,*" RowDefinitions="*,Auto">
+    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0" Padding="14,22,12,14">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="12,0,0,22">
+          <TextBlock Text="AirFlash" FontSize="22" FontWeight="SemiBold" />
+          <TextBlock Text="{loc:Text 'Settings and devices'}" Classes="HintText" Margin="0,4,0,0" />
+        </StackPanel>
+        <ListBox x:Name="Navigation" ItemsSource="{Binding Pages}" SelectedIndex="{Binding SelectedPage, Mode=TwoWay}"
+                 BorderThickness="0" Background="Transparent" VerticalAlignment="Top" />
+      </DockPanel>
+    </Border>
+    <Grid Grid.Column="1" Margin="26,23,20,0" RowDefinitions="Auto,*">
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{Binding PageTitle}" FontSize="24" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding PageDescription}" Classes="HintText" Margin="0,5,0,0" />
+      </StackPanel>
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,10">
+        <ContentControl x:Name="PageContainer" />
+      </ScrollViewer>
+    </Grid>
+    <Border Grid.Row="1" Grid.ColumnSpan="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+            Background="{DynamicResource SurfaceBrush}" Padding="20,12">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+          <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" />
+          <StackPanel IsVisible="{Binding IsApplying}">
+            <TextBlock Text="{Binding Progress}" Margin="0,0,0,6" />
+            <ProgressBar IsIndeterminate="True" Height="3" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button Content="{loc:Text 'OK'}" Command="{Binding OkCommand}" IsDefault="True" MinWidth="84" Margin="0,0,8,0" />
+          <Button Content="{loc:Text 'Cancel'}" Command="{Binding CancelCommand}" IsCancel="True" MinWidth="84" Margin="0,0,8,0" />
+          <Button Content="{loc:Text 'Apply'}" Command="{Binding ApplyCommand}" MinWidth="84" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

@@ -65,6 +65,13 @@ public sealed class AppSettings : ObservableObject
     private string? _CaptureEndpoint = null;
     public string? CaptureEndpoint { get => _CaptureEndpoint; set => Set(ref _CaptureEndpoint, value); }
     public void RefreshCaptureEndpoint() => Notify(nameof(CaptureEndpoint));
+    // Streaming input: "loopback" is system capture (Windows only), while
+    // "simulated" and "file" exist on every platform for reproducible capture.
+    private string _StreamSource = "loopback";
+    public string StreamSource { get => _StreamSource; set => Set(ref _StreamSource, value ?? ""); }
+    private string _StreamFilePath = "";
+    public string StreamFilePath { get => _StreamFilePath; set => Set(ref _StreamFilePath, value ?? ""); }
+    public static readonly string[] StreamSources = ["loopback", "simulated", "file"];
     private int _MasterVolume = 100;
     public int MasterVolume { get => _MasterVolume; set => Set(ref _MasterVolume, value); }
     public string? LastReceiverId { get; set; }
@@ -99,6 +106,8 @@ public sealed class AppSettings : ObservableObject
         if (!double.IsFinite(StandbySilenceSeconds) || StandbySilenceSeconds is < 5 or > 300) return L.Get("Standby threshold must be between 5 and 300 seconds.");
         if (CaptureMode is not ("loopback" or "endpoint")) return L.Get("Select a valid capture mode.");
         if (CaptureMode == "endpoint" && string.IsNullOrWhiteSpace(CaptureEndpoint)) return L.Get("Select a capture endpoint.");
+        if (!StreamSources.Contains(StreamSource)) return L.Get("Select a valid streaming source.");
+        if (StreamSource == "file" && string.IsNullOrWhiteSpace(StreamFilePath)) return L.Get("Select a streaming audio file.");
         foreach (var options in Receivers.Values)
         {
             if (options.Volume is < 0 or > 100) return L.Get("Device volume must be between 0 and 100.");
@@ -121,6 +130,7 @@ public sealed class AppSettings : ObservableObject
         LatencyMode = source.LatencyMode; CustomBufferMs = source.CustomBufferMs;
         StandbyEnabled = source.StandbyEnabled; StandbySilenceSeconds = source.StandbySilenceSeconds;
         CaptureMode = source.CaptureMode; CaptureEndpoint = source.CaptureEndpoint;
+        StreamSource = source.StreamSource; StreamFilePath = source.StreamFilePath;
         MasterVolume = source.MasterVolume; LastReceiverId = source.LastReceiverId;
         Extra = source.Extra?.ToDictionary(p => p.Key, p => p.Value.Clone());
         ReceiverAliases = new(source.ReceiverAliases, StringComparer.Ordinal);

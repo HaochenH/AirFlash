@@ -165,6 +165,76 @@ def test_linux_docs_cover_the_documented_boundaries():
         assert section in text, f"docs/LINUX.md must document {section}"
 
 
+def test_appimage_script_supports_a_gui_variant():
+    """The full variant adds the GUI; the backend variant must stay CLI-only."""
+    script = BUILD_SCRIPT.read_text(encoding="utf-8")
+    for required in (
+        "VARIANT=${VARIANT:-backend}",
+        "full) SUFFIX=\"-full\" ;;",
+        "dotnet publish",
+        "usr/lib/airflash-ui",
+        "usr/bin/airflash-ui",
+    ):
+        assert required in script, f"build script is missing {required}"
+    apprun = (APPIMAGE / "AppRun").read_text(encoding="utf-8")
+    assert "airflash-ui" in apprun, "AppRun must be able to launch the GUI"
+    assert "is_cli_command" in apprun, "AppRun must dispatch CLI commands"
+    # A bad variant fails loudly instead of silently building the backend image.
+    assert "VARIANT must be backend or full" in script
+
+
+@pytest.mark.skipif(
+    os.environ.get("AIRFLASH_BUILD_APPIMAGE") != "1",
+    reason="set AIRFLASH_BUILD_APPIMAGE=1 to run the AppImage build",
+)
+def test_full_appimage_build_includes_the_gui(tmp_path):
+    """VARIANT=full adds the panel to the same artifact family."""
+    if shutil.which("cargo") is None or shutil.which("dotnet") is None:
+        pytest.skip("cargo and dotnet are required")
+    build = tmp_path / "build"
+    out = tmp_path / "out"
+    result = subprocess.run(
+        ["bash", str(BUILD_SCRIPT)],
+        env={
+            **os.environ,
+            "VARIANT": "full",
+            "VERSION": "0.0.0.test",
+        "BUILD_DIR": str(build),
+        "OUTPUT_DIR": str(out),
+    },
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
+    assert result.returncode == 0, f"full build failed:\n{result.stdout}\n{result.stderr}"
+    artifacts = sorted(out.glob("*.AppImage"))
+    assert len(artifacts) == 1, f"expected one AppImage, got {artifacts}"
+    assert ARTIFACT_PATTERN.match(artifacts[0].name.replace("-full", "")), artifacts[0].name
+    assert artifacts[0].name.endswith("-full.AppImage"), "the full image must be distinguishable"
+    appdir = build / "AirFlash.AppDir"
+    for relative in (
+        "AppRun",
+        "VERSION",
+        ".DirIcon",
+        "airflash-cli.desktop",
+        "airflash-ui.desktop",
+        "airflash-cli.png",
+        "usr/bin/airflash-cli",
+        "usr/bin/airflash-engine",
+        "usr/bin/airflash-ui",
+        "usr/lib/airflash-ui/AirFlash.UI",
+        "usr/share/applications/airflash-ui.desktop",
+        "usr/share/icons/hicolor/512x512/apps/airflash-cli.png",
+    ):
+        path = appdir / relative
+        assert path.is_file(), f"full AppDir is missing {relative}"
+    assert os.access(appdir / "usr/bin/airflash-ui", os.X_OK)
+    # The two desktop entries must launch different binaries.
+    gui_entry = (appdir / "airflash-ui.desktop").read_text(encoding="utf-8")
+    assert "Exec=airflash-ui" in gui_entry
+    assert "Terminal=false" in gui_entry
+
+
 @pytest.mark.skipif(
     os.environ.get("AIRFLASH_BUILD_APPIMAGE") != "1",
     reason="set AIRFLASH_BUILD_APPIMAGE=1 to run the AppImage build",
@@ -175,16 +245,13 @@ def test_appimage_build_produces_a_named_artifact(tmp_path):
     build = tmp_path / "build"
     out = tmp_path / "out"
     result = subprocess.run(
-        [
-            "bash",
-            str(BUILD_SCRIPT),
-        ],
+        ["bash", str(BUILD_SCRIPT)],
         env={
             **os.environ,
             "VERSION": "0.0.0.test",
-            "BUILD_DIR": str(build),
-            "OUTPUT_DIR": str(out),
-        },
+        "BUILD_DIR": str(build),
+        "OUTPUT_DIR": str(out),
+    },
         capture_output=True,
         text=True,
         timeout=1800,

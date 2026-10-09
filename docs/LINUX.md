@@ -20,6 +20,41 @@ of a graphical UI. It is not a port of the WPF interface.
 | GUI / tray / settings | yes | no |
 | HomePod qualification on hardware | yes | not performed |
 
+## Graphical frontend (Avalonia)
+
+The Windows panel is WPF. On Linux the same interface ships as an **Avalonia UI**
+application that reuses the shared Core layer (session controller, settings,
+receiver catalog, equalizer, localization) and only re-implements the
+toolkit-specific parts (dispatcher, timers, discovery backend, paths).
+
+| Windows project | Linux counterpart |
+| --- | --- |
+| `desktop/AirFlash.App` (WPF) | `desktop/AirFlash.UI` (Avalonia) |
+| `WindowsDiscovery` (DNS-SD API) | `LinuxDiscovery` — runs `airflash-cli discover --json` and feeds `ReceiverAggregator` |
+| `AudioService` (NAudio endpoints) | `LinuxAudioService` — the sender owns capture; no mixer session |
+| `Autostart` (Run key) | `LinuxAutostart` — `~/.config/autostart/airflash-ui.desktop` |
+| `AppPaths` (AppData) | `AppPaths` — XDG config/state directories |
+
+The view models are ports of the Windows ones; both take the same shared
+`AirFlash.Core` types, so settings, pairing, reconnect logic and the diagnostics
+pages behave identically.
+
+Build and run:
+
+```bash
+dotnet build desktop/AirFlash.UI/AirFlash.UI.csproj
+dotnet test  desktop/AirFlash.UI.Tests/AirFlash.UI.Tests.csproj
+AIRFLASH_ENGINE=$PWD/native/airflash-engine/target/release/airflash-engine \
+AIRFLASH_CLI=$PWD/native/airflash-engine/target/release/airflash-cli \
+dotnet run --project desktop/AirFlash.UI/AirFlash.UI.csproj
+```
+
+Environment overrides: `AIRFLASH_ENGINE`, `AIRFLASH_CLI`, `AIRFLASH_DATA_DIR`
+(settings), `AIRFLASH_RUNTIME_DIR` (state, logs, single-instance lock).
+
+First run selects the **simulated test signal**, because system capture is
+Windows-only today. Switch the input in **Settings → Audio source**.
+
 ## Dependencies
 
 Runtime:
@@ -30,6 +65,10 @@ Runtime:
 Build:
 
 - Rust stable 1.85+ (`rustup`), `cargo`
+- .NET SDK 10.0+ for the graphical frontend (`dotnet`)
+- Avalonia 11.3 packages are restored from NuGet; the script pins
+  `Tmds.DBus.Protocol` 0.21.3 because the transitive 0.21.2 has a published
+  advisory (GHSA-xrw6-gwf8-vvr9)
 - The `cli` feature enables the headless binary:
   `cargo build --release --features cli --manifest-path native/airflash-engine/Cargo.toml`
 - x86_64 cross builds need `gcc-x86-64-linux-gnu` on other hosts
@@ -196,11 +235,23 @@ sudo loginctl enable-linger "$USER"
 
 ## AppImage
 
+Two variants come from one script:
+
 ```bash
-packaging/linux/appimage/build-appimage.sh
+packaging/linux/appimage/build-appimage.sh                  # headless only
+VARIANT=full packaging/linux/appimage/build-appimage.sh     # adds the panel
 ```
 
-- Produces `dist/AppImage/AirFlash-<version>-x86_64.AppImage` and `SHA256SUMS.txt`
+| Variant | Artifact | Contents |
+| --- | --- | --- |
+| `backend` | `AirFlash-<version>-x86_64.AppImage` | `airflash-cli`, `airflash-engine` |
+| `full` | `AirFlash-<version>-x86_64-full.AppImage` | the above plus the Avalonia panel and a `Terminal=false` desktop entry |
+
+In the full image, running the AppImage with no arguments opens the panel;
+`AirFlash.AppImage discover` (or any CLI command) still drives the headless
+binary, and `AirFlash.AppImage gui` forces the panel.
+
+- Produces `dist/AppImage/…AppImage` and `SHA256SUMS.txt`
 - `VERSION`, `TARGET`, `ARCH`, `OUTPUT_DIR`, `BUILD_DIR` and
   `AIRFLASH_APPIMAGETOOL` (path to an existing tool) override the defaults
 - The script is repeatable: it rebuilds the AppDir from scratch each run and
@@ -209,6 +260,8 @@ packaging/linux/appimage/build-appimage.sh
   `AIRFLASH_APPIMAGETOOL` points at an installed copy; `SKIP_APPIMAGETOOL_DOWNLOAD=1`
   makes a missing tool an error instead of a download
 - Cross builds need a cross linker, e.g. `gcc-x86-64-linux-gnu` on an aarch64 host
+- `VARIANT=full` needs the .NET SDK and publishes a self-contained runtime
+  (`DOTNET_RUNTIME` selects it; `linux-arm64` on an aarch64 host)
 - Windows release artifacts (`dist/AirFlash.exe`, `dist/AirFlash-*.msi`) are not
   touched by any part of this packaging
 
@@ -216,9 +269,9 @@ AppDir layout:
 
 ```
 AirFlash.AppDir/
-├── AppRun                     # executable wrapper, fills runtime locations
+├── AppRun                     # dispatches GUI vs CLI, fills runtime locations
 ├── .DirIcon / airflash-cli.png# icon used by appimagetool and desktops
-├── airflash-cli.desktop      # desktop entry (X-AppImage-Version substituted)
+├── airflash-cli.desktop      # CLI entry (X-AppImage-Version substituted)
 ├── VERSION                   # plain version text
 └── usr/
     ├── bin/airflash-cli      # the CLI
@@ -228,6 +281,10 @@ AirFlash.AppDir/
     ├── share/doc/airflash-cli/README
     └── share/licenses/airflash-cli/{LICENSE-GPLv3,LICENSE-COMMERCIAL.md}
 ```
+
+The `full` variant adds `usr/bin/airflash-ui` (a launcher),
+`usr/lib/airflash-ui/` (the published Avalonia app) and
+`airflash-ui.desktop` with `Terminal=false`.
 
 Running the AppImage without installing: `./AirFlash-<version>-x86_64.AppImage discover`.
 `AppRun` exports `AIRFLASH_RUNTIME_DIR` when neither it nor `XDG_RUNTIME_DIR` is
@@ -263,7 +320,8 @@ file or signal to a HomePod.
 
 ## Known limitations
 
-- No graphical UI, tray, autostart or settings window on Linux.
+- The graphical panel is new; it is not yet feature-complete against the Windows
+  UI (see below) and has no tray icon on every desktop yet.
 - No system-audio capture (see above).
 - `discover` implements a minimal mDNS querier: PTR/SRV/A/TXT parsing with
   compression pointers, no continuous browsing, no link-local IPv6 answers and
@@ -282,6 +340,8 @@ file or signal to a HomePod.
 ## Tests
 
 ```bash
+dotnet test desktop/AirFlash.Tests/AirFlash.Tests.csproj
+dotnet test desktop/AirFlash.UI.Tests/AirFlash.UI.Tests.csproj
 cargo test --features cli --manifest-path native/airflash-engine/Cargo.toml
 cargo clippy --all-targets --features cli --manifest-path native/airflash-engine/Cargo.toml -- -D warnings
 AIRFLASH_BUILD_APPIMAGE=1 python -m pytest tests/test_linux_packaging.py

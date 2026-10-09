@@ -1,0 +1,342 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Net.NetworkInformation;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
+using AirFlash.Core;
+using AirFlash.UI.Services;
+
+namespace AirFlash.UI.ViewModels;
+
+public sealed class SettingsViewModel : ObservableObject, IDisposable
+{
+    public const int EqualizerPage = 2, AudioCapturePage = 3, ReceiversPage = 4, MonitorPage = 5, NetworkPage = 6;
+    private readonly Guid _equalizerOwner = Guid.NewGuid();
+    public EqualizerEditor Equalizer { get; }
+    private string _equalizerError = "";
+    public string EqualizerError { get => _equalizerError; private set => Set(ref _equalizerError, value); }
+    private static readonly HttpClient UpdateClient = new() { MaxResponseContentBufferSize = 1024 * 1024 };
+    public UpdateCheckState Updates { get; } = new(new UpdateService(UpdateClient), Version.Parse(Services.AppPaths.Version));
+    public AsyncCommand CheckUpdatesCommand { get; }
+    public RelayCommand OpenDownloadCommand { get; }
+    public AppViewModel App { get; }
+    public AppSettings Draft { get; }
+    private AppSettings _baseline;
+    private readonly HashSet<ReceiverOptions> _subscribed = [];
+    private int _selectedPage, _validationErrors;
+    private string _error = "", _progress = "";
+    private string? _validation;
+    private bool _applying, _hasChanges, _disposed;
+    private TaskCompletionSource? _application;
+    public bool IsApplying => _applying;
+    public bool CanEdit => !_applying;
+    public bool IsEndpointLoading => false;
+    public Task ApplicationCompleted => _application?.Task ?? Task.CompletedTask;
+    public string Progress { get => _progress; private set => Set(ref _progress, value); }
+    public string Error { get => _error; private set => Set(ref _error, value); }
+    public bool HasChanges => _hasChanges;
+    public int SelectedPage
+    {
+        get => _selectedPage;
+        set
+        {
+            if (!Set(ref _selectedPage, value)) return;
+            Notify(nameof(PageTitle)); Notify(nameof(PageDescription));
+            if (value == NetworkPage) RefreshAdapters();
+        }
+    }
+    public string[] Pages { get; } = [L.Get("General"), L.Get("AirFlash streaming"), L.Get("Equalizer"), L.Get("Audio source"), L.Get("Receivers"), L.Get("Monitor"), L.Get("Network"), L.Get("About")];
+    public string PageTitle => Pages[Math.Clamp(SelectedPage, 0, Pages.Length - 1)];
+    public string PageDescription => new[] {
+        L.Get("Customize startup and appearance"),
+        L.Get("Balance responsiveness and connection stability"),
+        L.Get("Shape the sound sent to all receivers"),
+        L.Get("Choose the audio the sender streams"),
+        L.Get("Manage receivers, connections and per-device settings"),
+        L.Get("Live statistics for the current session"),
+        L.Get("Choose where AirPlay receivers are discovered"),
+        L.Get("Linux audio, wirelessly to HomePod") }[Math.Clamp(SelectedPage, 0, Pages.Length - 1)];
+    public ObservableCollection<DiscoveryAdapterOption> DiscoveryAdapters { get; } = [];
+    private string _networkStatus = "";
+    public string NetworkStatus { get => _networkStatus; private set => Set(ref _networkStatus, value); }
+    public RelayCommand RefreshAdaptersCommand { get; }
+    public ObservableCollection<ReceiverEditor> Receivers { get; } = [];
+    public AsyncCommand ApplyCommand { get; }
+    public AsyncCommand OkCommand { get; }
+    public RelayCommand CancelCommand { get; }
+    public AsyncCommand RefreshSourcesCommand { get; }
+    public RelayCommand OpenLogsCommand { get; }
+    public RelayCommand CopyDiagnosticsCommand { get; }
+    public event Action<bool>? CloseRequested;
+    public event Action? AddReceiverRequested;
+    public event Action<Receiver>? PairRequested;
+    public RelayCommand AddReceiverCommand { get; }
+    public RelayCommand LicensesCommand { get; }
+    public SettingsViewModel(AppViewModel app)
+    {
+        CheckUpdatesCommand = new(Updates.CheckAsync, _ => { });
+        OpenDownloadCommand = new(() =>
+        {
+            try
+            {
+                if (Updates.DownloadPage is { } url)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch (Exception error) { ShowError(error); }
+        });
+        App = app; Draft = app.Settings.Clone(); _baseline = Draft.Clone();
+        Equalizer = new(Draft.Equalizer, EqualizerSampleRate, EqualizerChanged);
+        App.Session.EqualizerFeedback += EqualizerFeedback;
+        ApplyCommand = new(async () => { await ApplyAsync(); }, ShowError, CanApply);
+        OkCommand = new(async () => { if (!HasChanges || await ApplyAsync()) CloseRequested?.Invoke(true); }, ShowError, () => CanEdit && _validationErrors == 0 && _validation is null);
+        CancelCommand = new(() => { if (CanEdit) CloseRequested?.Invoke(false); }, () => CanEdit);
+        RefreshSourcesCommand = new(async () => { await App.Sources.RefreshAsync(); }, ShowError, () => CanEdit);
+        RefreshAdaptersCommand = new(RefreshAdapters);
+        OpenLogsCommand = new(() => { try { Services.AppPaths.OpenLogs(); } catch (Exception error) { ShowError(error); } });
+        CopyDiagnosticsCommand = new(() =>
+        {
+            try
+            {
+                var text = App.Diagnostics();
+                var clipboard = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow?.Clipboard;
+                _ = clipboard?.SetTextAsync(text);
+            }
+            catch (Exception error) { ShowError(error); }
+        });
+        AddReceiverCommand = new(() => { if (CanEdit) AddReceiverRequested?.Invoke(); }, () => CanEdit);
+        LicensesCommand = new(() => { if (!_disposed) LicensesRequested?.Invoke(); });
+        Draft.PropertyChanged += DraftChanged;
+        Draft.ManualReceivers.CollectionChanged += ManualChanged;
+        RefreshCatalog(); RefreshValidation();
+        App.CatalogChanged += RefreshCatalog;
+        NetworkChange.NetworkAddressChanged += NetworkChanged;
+        NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
+        RefreshAdapters();
+    }
+    public event Action? LicensesRequested;
+    private void SyncSubscriptions()
+    {
+        foreach (var options in _subscribed.Where(o => !Draft.Receivers.ContainsValue(o)).ToArray()) { options.PropertyChanged -= DraftChanged; _subscribed.Remove(options); }
+        foreach (var options in Draft.Receivers.Values) if (_subscribed.Add(options)) options.PropertyChanged += DraftChanged;
+    }
+    private void ManualChanged(object? sender, NotifyCollectionChangedEventArgs args) { if (!_updating) RefreshValidation(); }
+    private void DraftChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(AppSettings.StreamSampleRate)) Equalizer.RefreshHeadroom();
+        if (_updating) return;
+        RefreshValidation();
+    }
+    private async void EqualizerChanged()
+    {
+        if (_updating || _disposed) return;
+        RefreshValidation();
+        if (Draft.Equalizer.Validate() is not null) return;
+        EqualizerError = "";
+        try { await App.Session.PreviewEqualizerAsync(_equalizerOwner, Draft.Equalizer); }
+        catch (Exception error) { if (!_disposed) { EqualizerError = error.Message; Services.AppPaths.Log(error.ToString()); } }
+    }
+    private int EqualizerSampleRate()
+    {
+        var snapshot = App.Session.Snapshot;
+        return snapshot.IsActive && snapshot.StreamRate is 44100 or 48000 ? snapshot.StreamRate : int.TryParse(Draft.StreamSampleRate, out var rate) ? rate : 44100;
+    }
+    private void EqualizerFeedback(string? error)
+    {
+        if (_disposed) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_disposed) return;
+            EqualizerError = error is null ? "" : L.Format("Could not update the equalizer: {0}", error);
+            if (error is null) Equalizer.RefreshHeadroom();
+        });
+    }
+    private async Task ClearPreviewAsync()
+    {
+        try { await App.Session.ClearEqualizerPreviewAsync(_equalizerOwner); }
+        catch (Exception error) { if (!_disposed) EqualizerError = error.Message; Services.AppPaths.Log(error.ToString()); }
+    }
+    private void RefreshValidation(bool clearError = true)
+    {
+        if (_updating || _disposed) return;
+        _validation = Draft.Validate();
+        _hasChanges = !SettingsMerge.Equal(_baseline, Draft);
+        if (clearError) Error = _validationErrors > 0 ? L.Get("Correct the highlighted fields before applying.") : _validation ?? "";
+        Notify(nameof(HasChanges)); ApplyCommand.Refresh(); OkCommand.Refresh();
+    }
+    public void SetValidationErrors(int count) { _validationErrors = Math.Max(0, count); RefreshValidation(); }
+    private bool CanApply() => CanEdit && _validationErrors == 0 && _validation is null && HasChanges;
+    private void RefreshBusy()
+    {
+        Notify(nameof(IsApplying)); Notify(nameof(CanEdit));
+        ApplyCommand.Refresh(); OkCommand.Refresh(); CancelCommand.Refresh(); AddReceiverCommand.Refresh(); RefreshSourcesCommand.Refresh();
+        foreach (var row in Receivers) row.Refresh();
+    }
+    public async Task<bool> ApplyAsync()
+    {
+        if (_disposed || _applying) return false;
+        RefreshValidation();
+        if (_validationErrors > 0 || _validation is not null) return false;
+        _applying = true; _application = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Progress = L.Get("Saving settings…"); RefreshBusy();
+        try
+        {
+            var result = await App.ApplyAsync(_baseline, Draft, message => Progress = message);
+            _updating = true;
+            try
+            {
+                Draft.CopyFrom(result.Saved); _baseline = result.Saved.Clone();
+                RefreshCatalog();
+            }
+            finally { _updating = false; }
+            await ClearPreviewAsync();
+            RefreshValidation();
+            Error = result.AudioError ?? "";
+            return result.AudioUpdated;
+        }
+        catch (Exception error) { ShowError(error); return false; }
+        finally
+        {
+            _applying = false; Progress = ""; RefreshBusy();
+            _application.TrySetResult();
+        }
+    }
+    private void RefreshCatalog()
+    {
+        if (_disposed) return;
+        ReceiverCatalog.ApplyMigrations(Draft, App.ReceiverMigrations, App.Snapshot.Receiver?.Id);
+        ReceiverCatalog.ApplyMigrations(_baseline, App.ReceiverMigrations, App.Snapshot.Receiver?.Id);
+        Draft.ReceiverAliases = new(App.Settings.ReceiverAliases, StringComparer.Ordinal);
+        _baseline.ReceiverAliases = new(App.Settings.ReceiverAliases, StringComparer.Ordinal);
+        var manualIds = Draft.ManualReceivers.Select(r => r.Id).ToHashSet();
+        var catalog = App.AllReceivers.Where(r => !r.IsManual || manualIds.Contains(r.Id)).ToDictionary(r => r.Id);
+        foreach (var manual in Draft.ManualReceivers) catalog[manual.Id] = new(manual.Id, manual.Name, manual.Host, manual.Port) { IsManual = true };
+        if (Draft.DiscoveryInterfaceId.Length == 0)
+            foreach (var id in Draft.Receivers.Keys)
+                if (!ReceiverCatalog.IsCoveredMember(id, App.AllReceivers)) catalog.TryAdd(id, Receiver.Offline(id));
+        foreach (var row in Receivers.Where(r => !catalog.ContainsKey(r.Receiver.Id)).ToArray()) Receivers.Remove(row);
+        var index = 0;
+        foreach (var receiver in catalog.Values.OrderBy(r => r.Name))
+        {
+            var options = Draft.Options(receiver.Id);
+            var row = Receivers.FirstOrDefault(r => r.Receiver.Id == receiver.Id);
+            if (row is null)
+            {
+                row = new(receiver, options, current => PairRequested?.Invoke(current), () => RemoveManual(receiver.Id), () => CanEdit);
+                Receivers.Insert(index, row);
+            }
+            else
+            {
+                row.SetOptions(options);
+                if (!AppViewModel.ReceiverEqual(row.Receiver, receiver)) { row.Receiver = receiver; row.Refresh(); }
+                var oldIndex = Receivers.IndexOf(row); if (oldIndex != index) Receivers.Move(oldIndex, index);
+            }
+            index++;
+        }
+        SyncSubscriptions();
+        RefreshValidation(false);
+    }
+    public void AddManual(string name, string host, int port)
+    {
+        if (!CanEdit) return;
+        if (Draft.ManualReceivers.Any(r => r.Host.Equals(host, StringComparison.OrdinalIgnoreCase) && r.Port == port)) { Error = L.Get("This address and port have already been added."); return; }
+        var id = $"{host.ToLowerInvariant()}:{port}";
+        Draft.ManualReceivers.Add(new(id, string.IsNullOrWhiteSpace(name) ? host : name, host, port));
+        RefreshCatalog(); RefreshValidation();
+    }
+    private void RemoveManual(string id)
+    {
+        if (!CanEdit) return;
+        var manual = Draft.ManualReceivers.FirstOrDefault(r => r.Id == id);
+        if (manual is null) return;
+        Draft.ManualReceivers.Remove(manual); Draft.Receivers.Remove(id);
+        var row = Receivers.FirstOrDefault(r => r.Receiver.Id == id); if (row is not null) Receivers.Remove(row);
+        SyncSubscriptions(); RefreshValidation();
+    }
+    private bool _updating;
+    private void NetworkChanged(object? sender, EventArgs args) => Dispatcher.UIThread.Post(RefreshAdapters);
+    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs args) => Dispatcher.UIThread.Post(RefreshAdapters);
+    private void RefreshAdapters()
+    {
+        if (_disposed) return;
+        try
+        {
+            var adapters = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(nic => nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                .Select(nic => new DiscoveryAdapter(
+                    nic.Id,
+                    nic.Name,
+                    nic.Description,
+                    string.Join(", ", nic.GetIPProperties().UnicastAddresses
+                        .Where(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        .Select(a => a.Address.ToString())),
+                    nic.OperationalStatus == OperationalStatus.Up,
+                    (uint)(nic.GetIPProperties().GetIPv4Properties()?.Index ?? 0)))
+                .ToArray();
+            var options = new List<DiscoveryAdapterOption> { new("", L.Get("All network interfaces (default)")) };
+            options.AddRange(adapters.OrderByDescending(a => a.Available)
+                .ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(a => new DiscoveryAdapterOption(a.Id, a.Label)));
+            var selected = Draft.DiscoveryInterfaceId;
+            if (selected.Length > 0 && options.All(a => !a.Id.Equals(selected, StringComparison.OrdinalIgnoreCase)))
+                options.Add(new(selected, L.Get("Unavailable · ") + selected));
+            for (var i = 0; i < options.Count; i++)
+            {
+                var option = options[i];
+                var current = DiscoveryAdapters.FirstOrDefault(a => a.Id == option.Id);
+                if (current is null) DiscoveryAdapters.Insert(i, option);
+                else
+                {
+                    if (current.Label != option.Label) current.Label = option.Label;
+                    var previous = DiscoveryAdapters.IndexOf(current);
+                    if (previous != i) DiscoveryAdapters.Move(previous, i);
+                }
+            }
+            while (DiscoveryAdapters.Count > options.Count) DiscoveryAdapters.RemoveAt(DiscoveryAdapters.Count - 1);
+            NetworkStatus = selected.Length == 0 ? L.Get("Discovery uses all network interfaces.") :
+                DiscoveryInterface.ResolveIndex(selected, adapters) is null ? L.Get("The selected network interface is unavailable. Discovery is paused.") :
+                L.Get("Discovery uses only the selected network interface.");
+        }
+        catch (NetworkInformationException error) { NetworkStatus = error.Message; }
+    }
+    private void ShowError(Exception error) { Error = error.Message; Services.AppPaths.Log(error.ToString()); }
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        App.Session.EqualizerFeedback -= EqualizerFeedback; Equalizer.Dispose();
+        _ = ClearPreviewAsync();
+        Updates.Dispose(); App.CatalogChanged -= RefreshCatalog;
+        NetworkChange.NetworkAddressChanged -= NetworkChanged; NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
+        App.SetMonitorVisible(false);
+        Draft.PropertyChanged -= DraftChanged; Draft.ManualReceivers.CollectionChanged -= ManualChanged;
+        foreach (var options in _subscribed) options.PropertyChanged -= DraftChanged;
+        _subscribed.Clear();
+    }
+}
+public sealed class ReceiverEditor : ObservableObject
+{
+    public Receiver Receiver { get; set; }
+    public ReceiverOptions Options { get; private set; }
+    public void SetOptions(ReceiverOptions options) { if (ReferenceEquals(Options, options)) return; Options = options; Notify(nameof(Options)); }
+    public ReceiverEditor(Receiver receiver, ReceiverOptions options, Action<Receiver> pair, Action remove, Func<bool> canEdit)
+    {
+        Receiver = receiver; Options = options;
+        PairCommand = new(() => { if (canEdit()) pair(Receiver); }, () => canEdit() && Receiver.Online && Receiver.Complete);
+        RemoveCommand = new(() => { if (canEdit()) remove(); }, canEdit);
+    }
+    public string Name => Receiver.Name;
+    public string Detail => $"{(Receiver.Address.Length > 0 ? ReceiverIdentity.Endpoint(Receiver.Address, Receiver.Port) : Receiver.Id)} · {(Receiver.Online ? Receiver.Detail : L.Get("Offline"))}";
+    public bool IsManual => Receiver.IsManual;
+    public RelayCommand PairCommand { get; }
+    public RelayCommand RemoveCommand { get; }
+    public void Refresh() { Notify(nameof(Name)); Notify(nameof(Detail)); Notify(nameof(IsManual)); PairCommand.Refresh(); RemoveCommand.Refresh(); }
+}
+public sealed class DiscoveryAdapterOption(string id, string label) : ObservableObject
+{
+    public string Id { get; } = id;
+    private string _label = label;
+    public string Label { get => _label; set => Set(ref _label, value); }
+}

@@ -18,6 +18,9 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
       - name: Rust tests (engine, discovery, CLI lifecycle, simulated audio)
         run: |
           cargo test --locked --features cli --manifest-path native/airflash-engine/Cargo.toml
@@ -45,6 +48,16 @@ jobs:
           if "$CLI" start --host 127.0.0.1 --rate 96000 2>/dev/null; then echo "invalid rate accepted"; exit 1; fi
           if "$CLI" volume --percent 30 2>/dev/null; then echo "incomplete volume command accepted"; exit 1; fi
           rm -rf "$RUNTIME"
+      - name: .NET tests (Core, shared ViewModel logic, Linux UI services)
+        run: |
+          dotnet test desktop/AirFlash.Tests/AirFlash.Tests.csproj --nologo
+          dotnet test desktop/AirFlash.UI.Tests/AirFlash.UI.Tests.csproj --nologo
+      - name: Avalonia build (debug and release)
+        run: |
+          dotnet build desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
+          dotnet build -c Release desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
+      - name: Windows-facing code still compiles (WPF targeting on Linux)
+        run: dotnet build desktop/AirFlash.App/AirFlash.App.csproj --nologo
       - uses: astral-sh/setup-uv@v6
         with:
           version: '0.8.22'
@@ -65,7 +78,7 @@ jobs:
             grep -q 'start --foreground' "$unit"
             ! grep -q '^User=' "$unit"
           done
-      - name: AppImage build (x86_64)
+      - name: AppImage build, headless variant (x86_64)
         run: |
           sudo apt-get update
           sudo apt-get install -y squashfs-tools file
@@ -106,11 +119,30 @@ jobs:
           AIRFLASH_BUILD_APPIMAGE: '1'
         run: |
           uv run pytest tests/test_linux_packaging.py
+      - name: AppImage build, full variant with the panel (x86_64)
+        run: VARIANT=full packaging/linux/appimage/build-appimage.sh
+      - name: AppImage variants and naming
+        run: |
+          ls dist/AppImage/
+          BACKEND=$(ls dist/AppImage/AirFlash-*-x86_64.AppImage | grep -v -- -full\.AppImage || true)
+          FULL=$(ls dist/AppImage/AirFlash-*-x86_64-full.AppImage)
+          [ -n "$BACKEND" ] || { echo "backend AppImage missing"; exit 1; }
+          echo "$BACKEND" | grep -Eq '^dist/AppImage/AirFlash-[0-9]+\.[0-9]+\.[0-9]+-x86_64\.AppImage$'
+          echo "$FULL" | grep -Eq '^dist/AppImage/AirFlash-[0-9]+\.[0-9]+\.[0-9]+-x86_64-full\.AppImage$'
+          # The headless image must not ship the GUI.
+          rm -rf /tmp/check-backend && mkdir -p /tmp/check-backend
+          cp "$BACKEND" /tmp/check-backend/ && cd /tmp/check-backend
+          chmod +x AirFlash-*.AppImage && ./AirFlash-*.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/usr/bin/airflash-cli
+          test ! -f squashfs-root/usr/bin/airflash-ui
+          ./squashfs-root/AppRun version
+          cd "$GITHUB_WORKSPACE"
       - uses: actions/upload-artifact@v4
         with:
           name: airflash-linux-appimage
           path: |
             dist/AppImage/AirFlash-*-x86_64.AppImage
+            dist/AppImage/AirFlash-*-x86_64-full.AppImage
             dist/AppImage/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7

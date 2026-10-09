@@ -1,24 +1,25 @@
 #!/bin/sh
-# AppRun for the AirFlash AppImage (headless CLI slice).
+# AppRun for the AirFlash AppImage.
 #
-# The engine is a command line binary; there is no GUI to start. This wrapper
-# only resolves the AppDir, fills in runtime locations that AppImages do not
-# inherit when launched from a file manager, and execs the CLI.
+# With no arguments (or `gui`) this starts the graphical panel when the image
+# carries one; with a CLI command it runs the headless binary, so a single
+# artifact can replace both `airflash-cli` and the desktop launcher.
 set -eu
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # AppImages mount at /tmp/.mount_XXXXXX; $APPDIR is exported by the runtime.
 APPDIR=${APPDIR:-$HERE}
-BIN="$APPDIR/usr/bin/airflash-cli"
+CLI="$APPDIR/usr/bin/airflash-cli"
+GUI="$APPDIR/usr/bin/airflash-ui"
 
-if [ ! -x "$BIN" ]; then
-    echo "AirFlash AppImage is incomplete: $BIN is missing" >&2
+if [ ! -x "$CLI" ]; then
+    echo "AirFlash AppImage is incomplete: $CLI is missing" >&2
     exit 127
 fi
 
 # State, logs and the control socket need a writable per-user location.
 # XDG_RUNTIME_DIR is normally set by systemd --user or a login session; AppImages
-# launched from a desktop file or a service unit may not have it.
+# launched from a file manager or a service unit may not have it.
 if [ -z "${AIRFLASH_RUNTIME_DIR:-}" ] && [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     HOME_DIR=${HOME:-/tmp}
     AIRFLASH_RUNTIME_DIR="$HOME_DIR/.local/state/airflash"
@@ -32,4 +33,40 @@ if [ -z "${XDG_CONFIG_HOME:-}" ] && [ -n "${HOME:-}" ]; then
     export XDG_CONFIG_HOME
 fi
 
-exec "$BIN" "$@"
+# The GUI only exists in the full image; the backend image answers with the CLI.
+CLI_COMMANDS="discover start stop status logs volume gain pair version help"
+is_cli_command() {
+    for command in $CLI_COMMANDS; do
+        [ "$1" = "$command" ] && return 0
+    done
+    return 1
+}
+
+if [ "$#" -eq 0 ] || [ "$1" = "gui" ]; then
+    if [ -x "$GUI" ]; then
+        if [ "$1" = "gui" ]; then shift; fi
+        exec "$GUI" "$@"
+    fi
+    if [ "$#" -eq 0 ]; then
+        echo "This AirFlash image is headless only; try 'AirFlash.AppImage help'." >&2
+        exec "$CLI" help
+    fi
+    shift
+    exec "$CLI" "$@"
+fi
+
+if [ "$1" = "--cli" ]; then
+    shift
+    exec "$CLI" "$@"
+fi
+
+if is_cli_command "$1"; then
+    exec "$CLI" "$@"
+fi
+
+# Anything else is treated as a GUI argument so `AirFlash.AppImage --help`
+# still shows the panel rather than failing on an unknown option.
+if [ -x "$GUI" ]; then
+    exec "$GUI" "$@"
+fi
+exec "$CLI" "$@"

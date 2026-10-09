@@ -1,0 +1,85 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:AirFlash.UI"
+             x:Class="AirFlash.UI.App"
+             RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- The same palette as the Windows panel, expressed with Avalonia resources. -->
+      <SolidColorBrush x:Key="CanvasBrush">#F4F6FB</SolidColorBrush>
+      <SolidColorBrush x:Key="SurfaceBrush">#FFFFFF</SolidColorBrush>
+      <SolidColorBrush x:Key="TextBrush">#162239</SolidColorBrush>
+      <SolidColorBrush x:Key="MutedBrush">#66748A</SolidColorBrush>
+      <SolidColorBrush x:Key="LineBrush">#E0E6F0</SolidColorBrush>
+      <SolidColorBrush x:Key="AccentBrush">#2563EB</SolidColorBrush>
+      <SolidColorBrush x:Key="TintBrush">#EAF1FF</SolidColorBrush>
+      <SolidColorBrush x:Key="AccentForegroundBrush">#FFFFFF</SolidColorBrush>
+      <SolidColorBrush x:Key="ErrorBrush">#C32D40</SolidColorBrush>
+      <ui:BoolToVisibilityConverter x:Key="BoolVisibility" />
+      <ui:NonEmptyConverter x:Key="NonEmpty" />
+      <ui:EqualityConverter x:Key="Equal" />
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <!-- The Fluent theme's default family keeps CJK and Latin readable everywhere. -->
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource CanvasBrush}" />
+    </Style>
+    <Style Selector="TextBlock.BodyText">
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="LineHeight" Value="21" />
+    </Style>
+    <Style Selector="TextBlock.HintText">
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.SectionTitleText">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    </Style>
+    <Style Selector="Border.Card">
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="18" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="MinHeight" Value="32" />
+    </Style>
+    <Style Selector="Button.IconButton">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="9,6" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="MinHeight" Value="34" />
+    </Style>
+    <Style Selector="Slider.AccentSlider">
+      <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+  </Application.Styles>
+</Application>

@@ -71,6 +71,13 @@ The daemon reuses `session::probe_with_controls`; it contains no protocol code o
 scheduler recovery, equalizer before master gain, capture metrics), so file and simulated
 captures feed the same transport path and report the same metrics as a real capture.
 
+### Desktop frontend
+
+`desktop/AirFlash.UI` is the Avalonia port of the Windows panel. It reuses
+`AirFlash.Core` (session, settings, receivers) and discovers receivers through
+`airflash-cli discover --json`, so the Rust mDNS implementation is the only one
+in the tree. See `docs/LINUX.md`.
+
 ### Tests
 
 ```bash

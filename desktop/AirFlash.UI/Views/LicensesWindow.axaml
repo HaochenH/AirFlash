@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:AirFlash.UI"
+        x:Class="AirFlash.UI.Views.LicensesWindow"
+        Title="{loc:Text 'Third-party licenses'}"
+        Width="640" Height="480"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="16">
+    <TextBlock DockPanel.Dock="Top" Text="{loc:Text 'Third-party components'}" Classes="SectionTitleText" />
+    <ScrollViewer>
+      <TextBlock x:Name="Notice" TextWrapping="Wrap" Classes="BodyText" />
+    </ScrollViewer>
+    <Button DockPanel.Dock="Bottom" Content="{loc:Text 'Close'}" Click="OnClose" HorizontalAlignment="Right" MinWidth="96" Margin="0,16,0,0" />
+  </DockPanel>
+</Window>

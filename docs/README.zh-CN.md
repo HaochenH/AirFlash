@@ -25,9 +25,16 @@ AirFlash 提供 Windows x64 可执行文件和可独立运行的 MSI 安装包�
 
 ## Linux（无界面预览）
 
-Linux 通过无图形界面的命令行程序 `airflash-cli` 提供支持，复用的是同一个原生
-AirPlay 2 发送端。该预览**尚未实现桌面音频采集**（PipeWire/PulseAudio）；可以播放
-指定文件或确定性测试信号，自动化测试也基于这两种输入验证传输链路。
+Linux 提供两种形态，复用的是同一个原生 AirPlay 2 发送端：
+
+- **无界面命令行** `airflash-cli`：发现、配对、后台播放、停止、查看状态与日志、
+  调节音量，全程不需要图形桌面。
+- **图形面板** `AirFlash.UI`（Avalonia）：与 Windows 版相同的面板布局、接收器
+  列表、单设备音量、均衡器、诊断与设置，直接复用共享的 .NET Core 层。
+
+该预览**尚未实现桌面音频采集**（PipeWire/PulseAudio），因此面板播放确定性测试信号
+或指定 WAV 文件。整条传输链路是真实的、可测试的，这个限制在界面和文档中都已明确
+说明，而不是被隐藏。
 
 ```bash
 airflash-cli discover
