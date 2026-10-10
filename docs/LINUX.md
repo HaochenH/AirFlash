@@ -247,6 +247,19 @@ VARIANT=full packaging/linux/appimage/build-appimage.sh     # adds the panel
 | `backend` | `AirFlash-<version>-x86_64.AppImage` | `airflash-cli`, `airflash-engine` |
 | `full` | `AirFlash-<version>-x86_64-full.AppImage` | the above plus the Avalonia panel and a `Terminal=false` desktop entry |
 
+`ARCH`/`TARGET` select the architecture, so the same script produces the aarch64
+pair on an aarch64 host:
+
+```bash
+VARIANT=full TARGET=aarch64-unknown-linux-gnu ARCH=aarch64 DOTNET_RUNTIME=linux-arm64 \
+  packaging/linux/appimage/build-appimage.sh
+```
+
+A cross build skips `appimagetool` — it is itself an AppImage and cannot run on a
+foreign architecture — and assembles the image from the official type2 runtime plus
+`squashfs-tools`, so x86_64 images can be produced from an aarch64 machine and the
+other way round.
+
 In the full image, running the AppImage with no arguments opens the panel;
 `AirFlash.AppImage discover` (or any CLI command) still drives the headless
 binary, and `AirFlash.AppImage gui` forces the panel.

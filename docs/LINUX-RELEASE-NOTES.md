@@ -1,6 +1,6 @@
 # AirFlash 0.4.0 · Linux preview
 
-Linux x86_64 · English and Simplified Chinese · AirPlay 2 sender
+Linux x86_64 and aarch64 · English and Simplified Chinese · AirPlay 2 sender
 
 > **Preview.** The Linux slice reuses the native sender, pairing and encrypted RTP
 > path that ships on Windows, but **system audio capture is not implemented on
@@ -11,16 +11,24 @@ Linux x86_64 · English and Simplified Chinese · AirPlay 2 sender
 
 ## What is in this release
 
-Two artifacts, both Linux x86_64 AppImages built by
-`packaging/linux/appimage/build-appimage.sh`:
+Four AppImages built by `packaging/linux/appimage/build-appimage.sh`, one pair
+per architecture:
 
 | Asset | Variant | Contains |
 | --- | --- | --- |
 | `AirFlash-0.4.0-x86_64.AppImage` | `backend` | `airflash-cli` + the JSONL `airflash-engine` |
 | `AirFlash-0.4.0-x86_64-full.AppImage` | `full` | the above plus the Avalonia panel (`Terminal=false` desktop entry) |
+| `AirFlash-0.4.0-aarch64.AppImage` | `backend` | same as the x86_64 backend image |
+| `AirFlash-0.4.0-aarch64-full.AppImage` | `full` | same as the x86_64 full image |
 
 In the full image, running the AppImage with no arguments opens the panel;
 `AirFlash.AppImage discover` (or any CLI command) still drives the headless binary.
+`SHA256SUMS.txt` covers all four; the images are not signed, so verify it out of band.
+
+Both architectures were produced from one aarch64 host: the x86_64 pair by
+cross-compiling with `TARGET=x86_64-unknown-linux-gnu` and assembling the image
+from the official AppImage runtime, because `appimagetool` cannot run on a
+foreign architecture.
 
 ## Features
 
@@ -51,9 +59,29 @@ The release was verified without HomePod hardware: the Rust suite includes a
 simulated AirPlay receiver (HAP/SRP, SETUP, RECORD, TEARDOWN, UDP media) that
 drives the real CLI through daemon start, streaming, control commands, graceful
 stop, failure without orphaned processes, SIGTERM, config files and argument
-validation. The .NET suites cover the shared Core, the Linux service layer and
-the discovery mapping. A Linux workflow builds and tests everything on every
-push and pull request.
+validation. The .NET suites cover the shared Core, the Linux service layer, the
+discovery mapping and — on a headless Avalonia dispatcher — the panel itself. A
+Linux workflow builds and tests everything on every push and pull request.
+
+The aarch64 images were additionally exercised on the build host: the CLI
+completes a daemon start, control and stop cycle against a local listener, every
+shipped ELF is aarch64 (including the bundled .NET runtime), and the panel was
+launched from the extracted image and confirmed to discover the AirPlay
+receivers present on that network.
+
+## Fixes after the first upload
+
+- **The panel now fills its receiver list.** Discovery reconciliation blocked the
+  UI thread on a semaphore and then on the reconcile's own continuations, which
+  capture the UI `SynchronizationContext`; the dispatcher could never advance, so
+  the panel opened and stayed on "Searching for receivers". The reconcile is
+  awaited instead of blocked, matching the Windows view model.
+- **A second launch exits cleanly.** The single-instance check ran after Avalonia
+  had started and shut down a live dispatcher, which threw. The lock is now taken
+  before the UI framework starts, so a duplicate launch raises the existing panel
+  and returns.
+
+Both are covered by new tests, including a headless dispatcher regression test.
 
 ## Known limitations
 
