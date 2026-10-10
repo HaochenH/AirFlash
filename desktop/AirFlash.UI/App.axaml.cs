@@ -29,14 +29,8 @@ public partial class App : Application
             return;
         }
         _desktop = desktop;
-        _single = new SingleInstance();
-        if (!_single.IsOwner)
-        {
-            // A second launch only asks the running instance to show itself.
-            _ = _single.NotifyExistingAsync();
-            desktop.Shutdown();
-            return;
-        }
+        // The lock is taken in Program.Main, before Avalonia starts.
+        _single = AppHost.Instance ?? new SingleInstance();
         _single.Listen(() => Dispatcher.UIThread.Post(ShowPanel));
 
         L.Initialize(CulturePreferences());

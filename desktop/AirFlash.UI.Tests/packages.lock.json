@@ -2,6 +2,16 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "Avalonia.Headless.XUnit": {
+        "type": "Direct",
+        "requested": "[11.3.11, )",
+        "resolved": "11.3.11",
+        "contentHash": "MUPcodoy/zj0qQ2x3NQOa9v9iH0f5nLqX7d6Lx6ZXTuI8bCfPFZdBzSvm71aYs0BsBSHM2NlZE+ztLoKE0y/6A==",
+        "dependencies": {
+          "Avalonia.Headless": "11.3.11",
+          "xunit.core": "2.4.0"
+        }
+      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[17.14.1, )",
@@ -87,6 +97,14 @@
         "dependencies": {
           "Avalonia": "11.3.11",
           "Tmds.DBus.Protocol": "0.21.2"
+        }
+      },
+      "Avalonia.Headless": {
+        "type": "Transitive",
+        "resolved": "11.3.11",
+        "contentHash": "O/KDwAqHTytuKWB84AwUfwxmMEnL3m+3aexnYdsuP+kfs0DMg5+fM7vEKi8ZgJJpOxOc2pP3e4iB6jzkFP7AxA==",
+        "dependencies": {
+          "Avalonia": "11.3.11"
         }
       },
       "Avalonia.Native": {

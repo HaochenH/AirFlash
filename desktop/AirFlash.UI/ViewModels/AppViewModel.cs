@@ -148,16 +148,23 @@ public sealed class AppViewModel : ObservableObject, IAsyncDisposable
             catch (Exception error) { Services.AppPaths.Log($"Engine handshake deferred: {error.Message}"); }
         });
     }
-    private void OnDiscovered(IReadOnlyList<Receiver> list)
+    /// <summary>
+    /// Discovery arrives on a background thread and is marshalled onto the UI
+    /// thread. Awaiting here instead of blocking matters: a blocking Wait plus
+    /// GetAwaiter().GetResult() deadlocks the dispatcher, because the awaits
+    /// inside capture the UI SynchronizationContext and queue their continuation
+    /// to the very thread that is waiting for it.
+    /// </summary>
+    private async void OnDiscovered(IReadOnlyList<Receiver> list)
     {
         if (_closing) return;
         try
         {
-            _settingsGate.Wait();
+            await _settingsGate.WaitAsync();
             try
             {
                 if (_closing) return;
-                ReconcileDiscoveryAsync(list).GetAwaiter().GetResult();
+                await ReconcileDiscoveryAsync(list);
             }
             finally
             {

@@ -49,13 +49,15 @@ jobs:
           if "$CLI" volume --percent 30 2>/dev/null; then echo "incomplete volume command accepted"; exit 1; fi
           rm -rf "$RUNTIME"
       - name: .NET tests (Core, shared ViewModel logic, Linux UI services)
+        # The UI suite drives a real dispatcher; a deadlock regression would stall
+        # it, so the runs are bounded instead of waiting out the job timeout.
         run: |
-          dotnet test desktop/AirFlash.Tests/AirFlash.Tests.csproj --nologo
-          dotnet test desktop/AirFlash.UI.Tests/AirFlash.UI.Tests.csproj --nologo
+          timeout 600 dotnet test desktop/AirFlash.Tests/AirFlash.Tests.csproj --nologo
+          timeout 600 dotnet test desktop/AirFlash.UI.Tests/AirFlash.UI.Tests.csproj --nologo
       - name: Avalonia build (debug and release)
         run: |
-          dotnet build desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
-          dotnet build -c Release desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
+          timeout 600 dotnet build desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
+          timeout 600 dotnet build -c Release desktop/AirFlash.UI/AirFlash.UI.csproj --nologo
       - name: Windows-facing code still compiles (WPF targeting on Linux)
         run: dotnet build desktop/AirFlash.App/AirFlash.App.csproj --nologo
       - uses: astral-sh/setup-uv@v6
