@@ -535,6 +535,55 @@ fn daemon_streams_against_the_fake_receiver_and_stops_gracefully() {
 }
 
 #[test]
+fn auto_timing_and_codec_defaults_stream_against_the_fake_receiver() {
+    // `--timing auto` resolves without a flag-supplied profile and the default
+    // `--codec auto` negotiates without receiver advertisements; the fake
+    // receiver accepts either codec, so this pins the defaults to a working
+    // end-to-end session rather than a validation error.
+    let receiver = Receiver::spawn("AA:BB:CC:DD:EE:09", false);
+    let instance = Instance::new("auto-defaults");
+    let host = receiver.address.ip().to_string();
+    let port = receiver.address.port().to_string();
+    let started = output(
+        &[
+            "start",
+            "--daemon",
+            "--host",
+            &host,
+            "--port",
+            &port,
+            "--source",
+            "simulated",
+            "--latency-ms",
+            "200",
+            "--gain",
+            "0.5",
+        ],
+        instance.path(),
+    );
+    assert!(
+        started.status.success(),
+        "auto-default start failed: {}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    until(
+        || instance.state_now()["status"] == "streaming",
+        "auto-default session streaming",
+    );
+    until(
+        || receiver.audio_packets.load(Ordering::Relaxed) > 5,
+        "audio from the auto-default session",
+    );
+    let stopped = output(&["stop"], instance.path());
+    assert!(stopped.status.success());
+    until(
+        || receiver.teardown.load(Ordering::Relaxed),
+        "graceful RTSP teardown at the receiver",
+    );
+    drop(receiver);
+}
+
+#[test]
 fn start_against_an_unreachable_receiver_fails_without_orphans() {
     // A bound-then-dropped listener gives a port that refuses connections.
     let closed = TcpListener::bind("127.0.0.1:0").unwrap();

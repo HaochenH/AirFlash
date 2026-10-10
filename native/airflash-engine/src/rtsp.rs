@@ -53,6 +53,37 @@ impl std::fmt::Display for WireError {
 }
 impl std::error::Error for WireError {}
 
+#[derive(Debug, Clone)]
+pub struct Rejected {
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub body: String,
+}
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}: RTSP/1.0 {} {} (body: {:?})",
+            self.method, self.path, self.status, self.first_line(), self.body
+        )
+    }
+}
+impl Rejected {
+    fn first_line(&self) -> &str {
+        match self.status {
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            454 => "Session Not Found",
+            500 => "Internal Server Error",
+            _ => "Rejected",
+        }
+    }
+}
+impl std::error::Error for Rejected {}
+
 #[derive(Debug)]
 pub struct Message {
     pub first: String,
@@ -320,11 +351,20 @@ impl Connection {
             if !self.stale_response(&response) { break response; }
         };
         self.validate_cseq(&response)?;
-        ensure!(
-            response.status()? == 200,
-            "{method} {path}: {}",
-            response.first
-        );
+        let status = response.status()?;
+        if status != 200 {
+            let body: String = String::from_utf8_lossy(&response.body)
+                .chars()
+                .take(160)
+                .collect();
+            return Err(Rejected {
+                method: method.to_string(),
+                path: path.to_string(),
+                status,
+                body,
+            }
+            .into());
+        }
         Ok(response)
     }
     /// Cancellation stops media immediately, but leaves a short teardown budget.

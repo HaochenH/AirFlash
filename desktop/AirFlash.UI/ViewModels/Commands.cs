@@ -35,12 +35,12 @@ public static class Choices
     public static Choice[] Latencies => [new("realtime", L.Get("Real-time · 120 ms")), new("normal", L.Get("Normal · 200 ms")), new("buffered", L.Get("Buffered · 500 ms")), new("custom", L.Get("Custom"))];
     public static Choice[] ReceiverLatencies => [new(null, L.Get("Use global setting")), .. Latencies];
     public static Choice[] AutoConnect => [new(null, L.Get("Use global setting")), new(true, L.Get("On")), new(false, L.Get("Off"))];
-    /// <summary>Streaming inputs available on Linux: system capture is not implemented yet.</summary>
+    /// <summary>Streaming inputs: system capture uses the PipeWire sink monitor on Linux.</summary>
     public static Choice[] StreamSources =>
     [
         new("simulated", L.Get("Simulated test signal")),
         new("file", L.Get("WAV file…")),
-        new("loopback", L.Get("System audio (not available on Linux)")),
+        new("loopback", L.Get("System audio")),
     ];
 }
 

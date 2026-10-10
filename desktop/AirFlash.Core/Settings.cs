@@ -65,7 +65,8 @@ public sealed class AppSettings : ObservableObject
     private string? _CaptureEndpoint = null;
     public string? CaptureEndpoint { get => _CaptureEndpoint; set => Set(ref _CaptureEndpoint, value); }
     public void RefreshCaptureEndpoint() => Notify(nameof(CaptureEndpoint));
-    // Streaming input: "loopback" is system capture (Windows only), while
+    // Streaming input: "loopback" is system capture (WASAPI on Windows,
+    // PipeWire sink monitor with PulseAudio fallback on Linux), while
     // "simulated" and "file" exist on every platform for reproducible capture.
     private string _StreamSource = "loopback";
     public string StreamSource { get => _StreamSource; set => Set(ref _StreamSource, value ?? ""); }

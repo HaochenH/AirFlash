@@ -143,7 +143,7 @@
         <Border Classes="Card">
           <StackPanel>
             <TextBlock Text="{loc:Text 'Audio source'}" Classes="SectionTitleText" />
-            <TextBlock Text="{loc:Text 'Linux streams a selected input instead of the desktop mixer. System audio capture (PipeWire/PulseAudio) is not implemented yet; the simulated signal and WAV file exercise the same transport path.'}"
+            <TextBlock Text="{loc:Text 'Linux streams a selected input instead of the desktop mixer. System audio captures the default PipeWire sink monitor (PulseAudio fallback included).'}"
                        Classes="HintText" Margin="0,0,0,16" />
             <RadioButton Content="{loc:Text 'Simulated test signal'}" GroupName="Source"
                          IsChecked="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=simulated}" />
@@ -158,7 +158,7 @@
             </Grid>
             <RadioButton Content="{loc:Text 'System audio'}" GroupName="Source"
                          IsChecked="{Binding Draft.StreamSource, Converter={StaticResource Equal}, ConverterParameter=loopback}" />
-            <TextBlock Text="{loc:Text 'Not available on Linux yet. Select this on Windows to capture the default output device.'}" Classes="HintText" Margin="26,0,0,0" />
+            <TextBlock Text="{loc:Text 'Captures the default output device through the PipeWire sink monitor. Use --monitor NAME with the headless CLI to pick another sink.'}" Classes="HintText" Margin="26,0,0,0" />
           </StackPanel>
         </Border>
         <Border Classes="Card">

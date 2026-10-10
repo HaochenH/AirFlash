@@ -103,13 +103,16 @@ pub struct PtpMaster {
 }
 impl PtpMaster {
     pub fn start(peers: Vec<IpAddr>, clock: Clock) -> Result<Self> {
-        // PTP event/general ports are below the unprivileged port range. A user
-        // service can grant them with net.ipv4.ip_unprivileged_port_start<=319
-        // (or ambient capabilities); timing="ntp" avoids the privileged ports.
+        // PTP event/general ports are below the unprivileged port range. Grant
+        // them with one of: sudo setcap cap_net_bind_service=+ep on the engine
+        // binary, sysctl net.ipv4.ip_unprivileged_port_start<=319 (or ambient
+        // capabilities / systemd AmbientCapabilities=CAP_NET_BIND_SERVICE).
+        // timing="ntp" avoids the privileged ports but AirPlay 2 receivers
+        // such as HomePods require PTP; timing="auto" picks PTP when possible.
         let event = UdpSocket::bind("0.0.0.0:319")
-            .context("PTP event port 319 unavailable; use timing=ntp, or set net.ipv4.ip_unprivileged_port_start<=319")?;
+            .context("PTP event port 319 unavailable; grant it with `sudo setcap cap_net_bind_service=+ep` on the engine binary (or sysctl net.ipv4.ip_unprivileged_port_start<=319), or use timing=ntp/auto")?;
         let general = UdpSocket::bind("0.0.0.0:320")
-            .context("PTP general port 320 unavailable; use timing=ntp, or set net.ipv4.ip_unprivileged_port_start<=319")?;
+            .context("PTP general port 320 unavailable; grant it with `sudo setcap cap_net_bind_service=+ep` on the engine binary (or sysctl net.ipv4.ip_unprivileged_port_start<=319), or use timing=ntp/auto")?;
         event.set_nonblocking(true)?;
         general.set_nonblocking(true)?;
         let clock_id = rand::random::<u64>() & 0x7fff_ffff_ffff_ffff;

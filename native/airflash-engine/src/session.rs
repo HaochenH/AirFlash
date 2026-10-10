@@ -120,8 +120,8 @@ impl ProbeOptions {
             "probe gain must be 0..0.1"
         );
         ensure!(
-            self.timing == "ptp" || self.timing == "ntp",
-            "timing must be ptp or ntp"
+            ["ptp", "ntp", "auto"].contains(&self.timing.as_str()),
+            "timing must be ptp, ntp or auto"
         );
         ensure!(
             crate::rtp::SUPPORTED_RATES.contains(&self.sample_rate),
@@ -129,6 +129,38 @@ impl ProbeOptions {
         );
         Ok(())
     }
+}
+/// `auto` keeps the sender working everywhere: PTP when its ports can be
+/// bound (AirPlay 2 receivers such as HomePods require it), NTP otherwise.
+/// Probing the bind up front also turns a late failure into an early warning.
+fn ptp_ports_bindable() -> bool {
+    matches!(
+        (
+            std::net::UdpSocket::bind("0.0.0.0:319"),
+            std::net::UdpSocket::bind("0.0.0.0:320"),
+        ),
+        (Ok(_), Ok(_))
+    )
+}
+
+fn resolve_timing(requested: &str) -> Result<String> {
+    match requested {
+        "ptp" | "ntp" => Ok(requested.to_string()),
+        "auto" => Ok(if ptp_ports_bindable() {
+            "ptp"
+        } else {
+            "ntp"
+        }
+        .to_string()),
+        _ => anyhow::bail!("timing must be ptp, ntp or auto"),
+    }
+}
+/// HomePods advertise PCM (cn=0) but reject PCM streams with 400; ALAC is the
+/// AirPlay-2-native codec, so prefer it whenever the receiver lists it (or
+/// advertises nothing) and fall back to the other codec when the audio SETUP
+/// is rejected.
+fn prefer_alac(codecs: &[u8]) -> bool {
+    codecs.is_empty() || codecs.contains(&1)
 }
 fn dictionary(items: Vec<(&str, Value)>) -> Value {
     Value::Dictionary(
@@ -269,12 +301,11 @@ impl Member {
         let audio_key = derive(&secret, "Events-Salt", "Events-Write-Encryption-Key");
         let rate = options.sample_rate;
         let mut packetizer = Packetizer::with_rate(audio_key, rand::random(), initial_rtp, ssrc, rate);
-        let use_alac =
-            !peer.codecs.is_empty() && !peer.codecs.contains(&0) && peer.codecs.contains(&1);
         ensure!(
-            peer.codecs.is_empty() || peer.codecs.contains(&0) || use_alac,
+            peer.codecs.is_empty() || peer.codecs.contains(&0) || peer.codecs.contains(&1),
             "receiver supports neither PCM nor ALAC"
         );
+        let mut use_alac = prefer_alac(&peer.codecs);
         if use_alac {
             packetizer.enable_alac();
         }
@@ -326,7 +357,8 @@ impl Member {
             .conn
             .lock()
             .unwrap()
-            .plist_request("SETUP", &member.uri, &dictionary(setup))?
+            .plist_request("SETUP", &member.uri, &dictionary(setup))
+            .context("session SETUP (timing/protocol negotiation)")?
             .plist()?;
         member.session_started = true;
         let event_port = get_port(&response, "eventPort")?;
@@ -349,34 +381,62 @@ impl Member {
             )?;
         }
         let latency = (options.latency_ms as u64 * rate as u64) / 1000;
-        let stream = dictionary(vec![
-            ("audioFormat", number(crate::rtp::audio_format(use_alac, rate))),
-            ("audioMode", string("default")),
-            ("controlPort", number(member.media.control_port()? as u64)),
-            ("ct", number(if use_alac { 2 } else { 1 })),
-            ("isMedia", Value::Boolean(true)),
-            ("latencyMin", number(latency)),
-            ("latencyMax", number(latency)),
-            ("shk", Value::Data(audio_key.to_vec())),
-            ("spf", number(FRAMES as u64)),
-            ("sr", number(rate as u64)),
-            ("type", number(96)),
-            ("supportsDynamicStreamID", Value::Boolean(false)),
-            ("streamConnectionID", number(ssrc as u64)),
-        ]);
-        emit(
-            json!({"event":"phase","host":peer.host,"phase":"setup_audio","requested_latency_ms":options.latency_ms}),
-        );
-        let response = member
-            .conn
-            .lock()
-            .unwrap()
-            .plist_request(
+        // A rejected audio SETUP is retried once with the other codec on the
+        // same session; the receiver keeps the session alive across a 400, so
+        // no re-authentication or new event channel is needed.
+        let mut retried_codec = false;
+        let response = loop {
+            let stream = dictionary(vec![
+                ("audioFormat", number(crate::rtp::audio_format(use_alac, rate))),
+                ("audioMode", string("default")),
+                ("controlPort", number(member.media.control_port()? as u64)),
+                ("ct", number(if use_alac { 2 } else { 1 })),
+                ("isMedia", Value::Boolean(true)),
+                ("latencyMin", number(latency)),
+                ("latencyMax", number(latency)),
+                ("shk", Value::Data(audio_key.to_vec())),
+                ("spf", number(FRAMES as u64)),
+                ("sr", number(rate as u64)),
+                ("type", number(96)),
+                ("supportsDynamicStreamID", Value::Boolean(false)),
+                ("streamConnectionID", number(ssrc as u64)),
+            ]);
+            emit(
+                json!({"event":"phase","host":peer.host,"phase":"setup_audio","requested_latency_ms":options.latency_ms}),
+            );
+            match member.conn.lock().unwrap().plist_request(
                 "SETUP",
                 &member.uri,
                 &dictionary(vec![("streams", Value::Array(vec![stream]))]),
-            )?
-            .plist()?;
+            ) {
+                Ok(message) => break message.plist().context("audio SETUP response")?,
+                Err(error)
+                    if !retried_codec
+                        && error
+                            .downcast_ref::<crate::rtsp::Rejected>()
+                            .is_some_and(|rejected| rejected.status == 400) =>
+                {
+                    retried_codec = true;
+                    use_alac = !use_alac;
+                    member.media.packetizer = Packetizer::with_rate(
+                        audio_key,
+                        rand::random(),
+                        initial_rtp,
+                        ssrc,
+                        rate,
+                    );
+                    if use_alac {
+                        member.media.packetizer.enable_alac();
+                    }
+                    emit(
+                        json!({"event":"codec_fallback","host":peer.host,"codec":if use_alac{"alac"}else{"pcm"},"reason":"audio SETUP rejected the first codec"}),
+                    );
+                }
+                Err(error) => {
+                    return Err(error).context("audio SETUP (streams/codec negotiation)");
+                }
+            }
+        };
         let stream = response
             .as_dictionary()
             .and_then(|d| d.get("streams"))
@@ -588,6 +648,10 @@ pub fn probe_with_controls(
     } else {
         options.validate()?;
     }
+    let mut options = options;
+    let requested_timing = options.timing.clone();
+    options.timing = resolve_timing(&requested_timing)?;
+    let timing_downgraded = requested_timing == "auto" && options.timing == "ntp";
     let samples = if options.source == "wav" {
         load_quiet_wav(&options)?
     } else {
@@ -682,8 +746,13 @@ pub fn probe_with_controls(
     let mut last_marker = 0u64;
     let mut next_sync = start;
     emit(
-        json!({"event":"streaming","members":members.len(),"clock_id":clock_id,"first_send_unix_ns":clock.now_ns(),"first_send_qpc_ns":qpc_ns(),"requested_latency_ms":options.latency_ms,"sample_rate":rate,"measured_latency_ms":null,"qualified":false}),
+        json!({"event":"streaming","members":members.len(),"clock_id":clock_id,"first_send_unix_ns":clock.now_ns(),"first_send_qpc_ns":qpc_ns(),"requested_latency_ms":options.latency_ms,"sample_rate":rate,"measured_latency_ms":null,"qualified":false,"timing":options.timing}),
     );
+    if timing_downgraded {
+        emit(
+            json!({"event":"warning","code":"timing_fallback","channel":"timing","host":null,"recovered":true,"message":"PTP ports 319/320 are unavailable, so this session uses NTP timing. AirPlay 2 receivers such as HomePods require PTP: sudo setcap cap_net_bind_service=+ep on the engine binary, sysctl net.ipv4.ip_unprivileged_port_start<=319, or systemd AmbientCapabilities=CAP_NET_BIND_SERVICE"}),
+        );
+    }
     let mut pcm = vec![0; PCM_BYTES];
     let outcome = (|| -> Result<()> {
         while (options.duration_ms == 0 || start.elapsed() < duration) && !cancel.is_cancelled() {
@@ -800,6 +869,21 @@ fn transport_metrics(members: &[Member], schedule: &MediaSchedule) -> Json {
 mod tests {
     use super::*;
     #[test]
+    fn codec_preference_prefers_alac_and_timing_auto_resolves() {
+        assert!(prefer_alac(&[]), "unknown receivers start with ALAC");
+        assert!(prefer_alac(&[0, 1, 2, 3]), "HomePods list PCM but require ALAC");
+        assert!(prefer_alac(&[1]));
+        assert!(!prefer_alac(&[0]), "PCM-only receivers keep PCM first");
+        assert_eq!(resolve_timing("ptp").unwrap(), "ptp");
+        assert_eq!(resolve_timing("ntp").unwrap(), "ntp");
+        assert!(resolve_timing("bogus").is_err());
+        assert!(
+            ["ptp", "ntp"].contains(&resolve_timing("auto").unwrap().as_str()),
+            "auto must resolve to a concrete profile"
+        );
+    }
+
+    #[test]
     fn unsafe_probe_rejected() {
         let mut o = ProbeOptions {
             peers: vec![Peer {
@@ -841,6 +925,11 @@ mod tests {
         o.sample_rate = 48000;
         assert!(o.validate().is_ok());
         o.sample_rate = 96000;
+        assert!(o.validate().is_err());
+        o.sample_rate = 44100;
+        o.timing = "auto".into();
+        assert!(o.validate().is_ok());
+        o.timing = "bogus".into();
         assert!(o.validate().is_err());
     }
 }

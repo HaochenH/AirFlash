@@ -119,7 +119,7 @@ JSON (`--json`), and errors go to stderr with a non-zero exit code.
 | Command | Purpose |
 | --- | --- |
 | `discover [--timeout-ms N] [--json] [--service airplay\|raop\|all]` | mDNS browse for `_airplay._tcp` / `_raop._tcp` receivers |
-| `start --host IP [--port N] [--source file\|simulated\|loopback] [--wav PATH] [--rate N] [--latency-ms N] [--gain F] [--timing ptp\|ntp] [--config PATH] [--daemon\|--foreground] [--log PATH] [--runtime-dir PATH] [--quiet]` | open a session and stream |
+| `start --host IP [--port N] [--source file\|simulated\|loopback] [--wav PATH] [--rate N] [--latency-ms N] [--gain F] [--timing ptp\|ntp\|auto] [--codec alac\|pcm\|auto] [--monitor NAME] [--config PATH] [--daemon\|--foreground] [--log PATH] [--runtime-dir PATH] [--quiet]` | open a session and stream |
 | `start --device NAME` | resolve the receiver through mDNS first |
 | `stop [--timeout-ms N] [--force]` | graceful stop (SIGTERM, then SIGKILL with `--force`) |
 | `status [--json]` | session state, receiver, uptime, last error |
@@ -130,17 +130,30 @@ JSON (`--json`), and errors go to stderr with a non-zero exit code.
 | `version` | binary version |
 
 `--config PATH` reads a JSON file with the same keys as the flags (snake_case:
-`host`, `port`, `source`, `wav`, `rate`, `latency_ms`, `gain`, `timing`, `log`,
-`runtime_dir`). Explicit flags override the file. The systemd units use it.
+`host`, `port`, `source`, `wav`, `rate`, `latency_ms`, `gain`, `timing`, `codec`,
+`monitor`, `log`, `runtime_dir`). Explicit flags override the file. The systemd
+units use it. `--device NAME` resolves the receiver through mDNS first and picks
+up its advertised codecs; `--monitor NAME` selects a PipeWire sink (node name,
+id or description) instead of the default sink monitor.
 
 ### Timing
 
-`--timing ptp` is the AirPlay default and matches the Windows application.
-PTP uses UDP ports 319/320, which are **privileged**: an unprivileged process
-can only bind them when `net.ipv4.ip_unprivileged_port_start` is 319 or lower
-(the binary has no capabilities granted). Use `--timing ntp` on hosts where you
-cannot change that sysctl, and note that NTP timing is not the AirPlay-preferred
-profile. The example systemd configuration uses `ntp` for this reason.
+`--timing auto` (the default) uses PTP when UDP ports 319/320 can be bound and
+falls back to NTP otherwise, with a `timing_fallback` warning event. PTP is the
+AirPlay default, matches the Windows application, and is **required by AirPlay 2
+receivers such as HomePods**: an NTP-timed session connects and lights the
+receiver, but the audio SETUP is rejected with `400 Bad Request`.
+
+Ports 319/320 are **privileged**. Grant them with one of:
+
+```bash
+sudo setcap cap_net_bind_service=+ep /usr/bin/airflash-cli
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=319
+```
+
+or, for the systemd unit, `AmbientCapabilities=CAP_NET_BIND_SERVICE` (see the
+commented lines in `packaging/linux/systemd/user/airflash-cli.service`).
+`--timing ntp` remains available for receivers that accept it.
 
 ## Background operation
 
@@ -303,48 +316,51 @@ Running the AppImage without installing: `./AirFlash-<version>-x86_64.AppImage d
 `AppRun` exports `AIRFLASH_RUNTIME_DIR` when neither it nor `XDG_RUNTIME_DIR` is
 set, so the CLI works from a file manager as well as from a terminal.
 
-## Audio input and its limits
+## Audio input
 
-This is the honest boundary of the current slice:
-
-- **PipeWire and PulseAudio capture is not implemented.** There is no Linux
-  system-audio capture yet; `--source loopback` on Linux fails with an explicit
-  error instead of streaming silence or pretending to capture.
-- Two testable inputs exist so the transport path can be exercised without a
-  desktop mixer:
-  - `--source simulated` — a deterministic stereo signal (220 Hz left / 330 Hz
-    right, one second of tone then one second of silence). Reproducible output,
-    which is what the automated tests assert on.
-  - `--source file --wav PATH` — loops a WAV file (16/24/32-bit integer or
-    32-bit float PCM, mono or multichannel, any rate, resampled to the streaming
-    rate, up to ten minutes).
-- The WAV/loopback capture queue, resampling, equalizer, master gain, underrun
-  silence padding and scheduler recovery are the same code the Windows loopback
-  uses, so behaviour and metrics are comparable across platforms.
+- `--source loopback` — **system audio**: the default PipeWire sink monitor,
+  linked explicitly by monitor port (never the microphone). `--monitor NAME`
+  selects another sink by node name, id or description. When `pw-record` is
+  absent, `parec` records the PulseAudio default sink monitor instead; when
+  neither helper exists, startup fails with guidance instead of streaming
+  silence. Native capture runs at 48 kHz and is resampled to the streaming
+  rate with queue-level drift correction, mirroring the WASAPI loopback.
+- `--source simulated` — a deterministic stereo signal (220 Hz left / 330 Hz
+  right, one second of tone then one second of silence). Reproducible output,
+  which is what the automated tests assert on.
+- `--source file --wav PATH` — loops a WAV file (16/24/32-bit integer or
+  32-bit float PCM, mono or multichannel, any rate, resampled to the streaming
+  rate, up to ten minutes).
+- `--codec alac|pcm|auto` (default `auto`) — ALAC is preferred and the sender
+  retries once with the other codec when the audio SETUP is rejected, so a
+  receiver that only accepts one of them still connects.
+- The capture queue, resampling, equalizer, master gain, underrun silence
+  padding and scheduler recovery mirror the Windows loopback, so behaviour and
+  metrics are comparable across platforms.
 - `airflash-cli status`, `logs` and the `capture_metrics` events report
   `input_rate`, `underrun_packets`, `dropped_frames` and queue-age percentiles
-  for the selected input, so file or simulated captures are never presented as
-  desktop audio.
+  for the selected input.
 
-Consequences: streaming from real desktop audio on Linux requires a future
-PipeWire/PulseAudio capture implementation. Until then, the CLI plus AppImage are
-useful for verification, pairing, discovery and CI, and for streaming a chosen
-file or signal to a HomePod.
+On virtual machines without a real audio clock the PipeWire graph can run
+faster than wall-clock time; the sender then drops the excess to keep latency
+bounded (`dropped_frames` grows while `capture_frames` outpaces the send
+schedule). That is the graph outrunning time, not lost audio, and does not
+happen on hardware with a real ALSA clock.
 
 ## Known limitations
 
 - The graphical panel is new; it is not yet feature-complete against the Windows
   UI (see below) and has no tray icon on every desktop yet.
-- No system-audio capture (see above).
 - `discover` implements a minimal mDNS querier: PTR/SRV/A/TXT parsing with
   compression pointers, no continuous browsing, no link-local IPv6 answers and
   no known-answer suppression. It is a CLI query, not a general DNS-SD stack.
-- PTP timing needs privileged ports 319/320 unless
-  `net.ipv4.ip_unprivileged_port_start` is lowered; no capabilities are
-  requested or set.
+- PTP timing needs privileged ports 319/320: grant `cap_net_bind_service` (or
+  lower `net.ipv4.ip_unprivileged_port_start`). Without PTP, HomePods reject
+  the audio stream even though the session connects.
 - Equalizer control is available in the engine but is not exposed on the CLI.
-- HomePod hardware qualification has not been performed on Linux. The protocol
-  path is exercised against a simulated receiver in the test suite only.
+- HomePod hardware qualification on Linux: a HomePod mini streams system audio
+  (PipeWire monitor), WAV file and simulated signal end to end at 10% receiver
+  volume with clean feedback; see the 0.4.1 release notes.
 - No code signing or update channel for the AppImage; verify `SHA256SUMS.txt`
   out of band.
 - Only x86_64 is packaged; the build script accepts other targets, but they are

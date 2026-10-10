@@ -1,9 +1,10 @@
 {
   "host": "192.168.1.42",
   "port": 7000,
-  "source": "simulated",
+  "source": "loopback",
   "rate": 44100,
   "latency_ms": 200,
   "gain": 1.0,
-  "timing": "ntp"
+  "timing": "auto",
+  "codec": "auto"
 }

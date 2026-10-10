@@ -304,9 +304,9 @@ public sealed class SessionController(IEngineFactory factory, IAudioService audi
                     try
                     {
                         // The platform picks its input: Windows keeps WASAPI loopback,
-                        // Linux heads use the simulated or file sources.
+                        // Linux captures the PipeWire sink monitor ("loopback" too).
                         var source = AppSettings.StreamSources.Contains(settings.StreamSource) ? settings.StreamSource : "loopback";
-                        await connection.SendAsync(session, "start", new { peers, source, wav_path = settings.StreamFilePath, duration_ms = 0, latency_ms = settings.Latency(receiver.Id), gain = Gain(receiver), timing = "ptp", capture_endpoint = settings.EffectiveEndpoint, sample_rate = int.Parse(settings.StreamSampleRate), equalizer = EffectiveEqualizer().WireParameters() }, cancellation).ConfigureAwait(false);
+                        await connection.SendAsync(session, "start", new { peers, source, wav_path = settings.StreamFilePath, duration_ms = 0, latency_ms = settings.Latency(receiver.Id), gain = Gain(receiver), timing = "auto", capture_endpoint = settings.EffectiveEndpoint, sample_rate = int.Parse(settings.StreamSampleRate), equalizer = EffectiveEqualizer().WireParameters() }, cancellation).ConfigureAwait(false);
                         lock (_sync) { if (epoch == _generation && ReferenceEquals(_connection, connection)) _equalizerReady = true; }
                     }
                     finally { _equalizerWriter.Release(); }

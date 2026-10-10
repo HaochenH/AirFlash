@@ -141,9 +141,10 @@ def test_example_configs_are_valid_and_cover_the_audio_choice():
     settings = json.loads((CONFIG / "cli.json.example").read_text(encoding="utf-8"))
     assert settings["host"], "an example receiver is required"
     assert settings["source"] in {"simulated", "file", "loopback"}
-    assert settings["timing"] in {"ptp", "ntp"}
-    # Privileged PTP ports are not available to unprivileged user services.
-    assert settings["timing"] == "ntp", "the example config must work without privileges"
+    assert settings["timing"] in {"ptp", "ntp", "auto"}
+    # Privileged PTP ports are not available to unprivileged user services;
+    # "auto" is allowed because it falls back to NTP there.
+    assert settings["timing"] in {"ntp", "auto"}, "the example config must work without privileges"
     assert 0.0 <= settings["gain"] <= 1.0
     env = (CONFIG / "cli.env.example").read_text(encoding="utf-8")
     assert "DBUS_SESSION_BUS_ADDRESS" in env, "the audio session environment must be documented"

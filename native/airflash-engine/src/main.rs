@@ -12,8 +12,11 @@ use std::{
 
 #[cfg(windows)]
 const LIVE_LOOPBACK_SUPPORTED: bool = true;
+/// Linux system capture is implemented through the PipeWire sink monitor
+/// (PulseAudio `parec` fallback); it fails with guidance when neither helper
+/// exists, so it is advertised as supported.
 #[cfg(not(windows))]
-const LIVE_LOOPBACK_SUPPORTED: bool = false;
+const LIVE_LOOPBACK_SUPPORTED: bool = true;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {

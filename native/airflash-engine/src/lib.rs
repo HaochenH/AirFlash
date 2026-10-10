@@ -19,7 +19,7 @@ pub mod wasapi;
 #[cfg(windows)]
 pub mod live;
 #[cfg(not(windows))]
-#[path = "live_stub.rs"]
+#[path = "live_unix.rs"]
 pub mod live;
 
 #[cfg(all(unix, feature = "cli"))]

@@ -126,8 +126,7 @@ public sealed class LinuxDiscovery : IDiscoveryService
 /// <summary>
 /// Linux audio: the sender runs in a user session and the engine owns capture,
 /// so local mute is a no-op and endpoint selection is replaced by the streaming
-/// source choice. System capture is not implemented yet, which the settings page
-/// states explicitly.
+/// source choice. System capture runs through the PipeWire sink monitor.
 /// </summary>
 public sealed class LinuxAudioService : IAudioService
 {

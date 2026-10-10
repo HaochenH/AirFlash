@@ -31,7 +31,8 @@ usage:
   airflash-cli discover [--timeout-ms N] [--json] [--service airplay|raop|all]
   airflash-cli start --host IP [--port N] [--source file|simulated|loopback]
                     [--wav PATH] [--rate N] [--latency-ms N] [--gain F]
-                    [--timing ptp|ntp] [--config PATH] [--daemon|--foreground]
+                    [--timing ptp|ntp|auto] [--codec alac|pcm|auto] [--monitor NAME]
+                    [--config PATH] [--daemon|--foreground]
                     [--log PATH] [--runtime-dir PATH] [--quiet]
   airflash-cli start --device NAME   (resolve the receiver through mDNS first)
   airflash-cli stop [--timeout-ms N] [--force]
@@ -64,8 +65,15 @@ struct SessionSettings {
     latency_ms: Option<u32>,
     gain: Option<f32>,
     timing: Option<String>,
+    codec: Option<String>,
+    monitor: Option<String>,
     log: Option<PathBuf>,
     runtime_dir: Option<PathBuf>,
+    /// Receiver-advertised RAOP codecs, filled by mDNS resolution (never from
+    /// the JSON config file). Empty means unknown: the engine prefers ALAC and
+    /// falls back to PCM when the audio SETUP is rejected.
+    #[serde(default, skip_serializing)]
+    codecs: Vec<u8>,
 }
 
 fn main() -> ExitCode {
@@ -174,8 +182,8 @@ impl Parsed {
 }
 
 const START_VALUED: &[&str] = &[
-    "host", "device", "port", "source", "wav", "rate", "latency-ms", "gain", "timing", "config",
-    "log", "runtime-dir", "timeout-ms",
+    "host", "device", "port", "source", "wav", "rate", "latency-ms", "gain", "timing", "codec",
+    "monitor", "config", "log", "runtime-dir", "timeout-ms",
 ];
 const START_BOOLEAN: &[&str] = &["daemon", "foreground", "quiet"];
 
@@ -201,6 +209,8 @@ fn settings(args: &[String]) -> Result<(SessionSettings, Parsed, bool, bool)> {
             "latency-ms" => settings.latency_ms = Some(value.parse()?),
             "gain" => settings.gain = Some(value.parse()?),
             "timing" => settings.timing = Some(value.clone()),
+            "codec" => settings.codec = Some(value.clone()),
+            "monitor" => settings.monitor = Some(value.clone()),
             "log" => settings.log = Some(PathBuf::from(value)),
             "runtime-dir" => settings.runtime_dir = Some(PathBuf::from(value)),
             _ => {}
@@ -229,6 +239,7 @@ fn resolve_host(settings: &mut SessionSettings, timeout_ms: u64) -> Result<()> {
         Duration::from_millis(timeout_ms),
         discovery_target(),
     )?;
+    let mut seen = std::collections::HashSet::new();
     let matches: Vec<_> = services
         .iter()
         .filter(|service| {
@@ -237,6 +248,9 @@ fn resolve_host(settings: &mut SessionSettings, timeout_ms: u64) -> Result<()> {
                 || service.host == device
                 || service.addresses.iter().any(|a| a.to_string() == device)
         })
+        // One receiver answers on both _airplay and _raop; they are the same
+        // endpoint and must not count as ambiguous.
+        .filter(|service| seen.insert((service.addresses.first().copied(), service.port)))
         .collect();
     match matches.as_slice() {
         [] => bail!("no discovered receiver matches '{device}'"),
@@ -249,6 +263,15 @@ fn resolve_host(settings: &mut SessionSettings, timeout_ms: u64) -> Result<()> {
             settings.host = Some(host.to_string());
             settings.port = Some(service.port);
             settings.device = None;
+            // The RAOP TXT record advertises supported codecs as `cn=0,1,2,3`
+            // (0 PCM, 1 ALAC). The engine prefers ALAC and falls back, but an
+            // explicit receiver advertisement still beats guessing.
+            if let Some(cn) = service.txt.get("cn") {
+                settings.codecs = cn
+                    .split(',')
+                    .filter_map(|item| item.trim().parse::<u8>().ok())
+                    .collect();
+            }
             Ok(())
         }
         _ => bail!("'{device}' matches {} receivers; use --host instead", matches.len()),
@@ -283,17 +306,27 @@ fn build_options(settings: &SessionSettings) -> Result<ProbeOptions> {
     };
     let rate = settings.rate.unwrap_or(44100);
     ensure!(rate == 44100 || rate == 48000, "usage: --rate must be 44100 or 48000");
-    let timing = settings.timing.as_deref().unwrap_or("ptp").to_string();
-    ensure!(timing == "ptp" || timing == "ntp", "usage: --timing must be ptp or ntp");
+    let timing = settings.timing.as_deref().unwrap_or("auto").to_string();
+    ensure!(
+        ["ptp", "ntp", "auto"].contains(&timing.as_str()),
+        "usage: --timing must be ptp, ntp or auto"
+    );
+    let codec = settings.codec.as_deref().unwrap_or("auto");
+    let codecs = match codec {
+        "alac" => vec![1],
+        "pcm" => vec![0],
+        "auto" => settings.codecs.clone(),
+        _ => bail!("usage: --codec must be alac, pcm or auto, got '{codec}'"),
+    };
     let options = ProbeOptions {
         peers: vec![airflash_engine::session::Peer {
             host,
             port: settings.port.unwrap_or(7000),
-            codecs: Vec::new(),
+            codecs,
         }],
         wav_path,
         source: source.to_string(),
-        capture_endpoint: None,
+        capture_endpoint: settings.monitor.clone(),
         duration_ms: 0,
         latency_ms: settings.latency_ms.unwrap_or(200),
         gain: settings.gain.unwrap_or(1.0),
@@ -395,6 +428,7 @@ fn start(args: &[String]) -> Result<u8> {
             ("latency-ms".into(), options.latency_ms.to_string()),
             ("gain".into(), options.gain.to_string()),
             ("timing".into(), options.timing.clone()),
+            ("codec".into(), settings.codec.clone().unwrap_or_else(|| "auto".into())),
             ("runtime-dir".into(), layout.root().display().to_string()),
         ];
         if !options.wav_path.as_os_str().is_empty() {

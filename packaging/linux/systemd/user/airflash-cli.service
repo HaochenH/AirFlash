@@ -26,6 +26,11 @@ Restart=on-failure
 RestartSec=5
 # Audio backends available to a user session (PipeWire/PulseAudio) are reached
 # through the user's session bus, which systemd --user already imports.
+# AirPlay 2 receivers such as HomePods require PTP timing (UDP 319/320), which
+# are privileged ports. Uncomment ONE of the following when the unit must use
+# PTP; without it the engine falls back to NTP with a timing_fallback warning.
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=airflash-cli

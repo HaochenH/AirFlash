@@ -107,14 +107,6 @@ public sealed class AppViewModel : ObservableObject, IAsyncDisposable
         await _settingsGate.WaitAsync();
         try
         {
-            if (_settings.StreamSource == "loopback" && !OperatingSystem.IsWindows())
-            {
-                // System capture is Windows-only today; stream the test signal
-                // instead of failing on the first play.
-                _settings.StreamSource = "simulated";
-                await _store.SaveAsync(_settings.Clone());
-                Notice = L.Get("Linux streams the simulated test signal. Choose another input in Settings → Audio source.");
-            }
             await _autostart.SetAsync(_settings.StartAtLogin);
             if (_store is SettingsStore { LoadWarning: { } warning }) Notice = warning;
             ReadHello();
